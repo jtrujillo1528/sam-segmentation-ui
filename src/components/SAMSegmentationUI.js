@@ -94,7 +94,7 @@ const SAMSegmentationUI = () => {
  
        if (allMasks[currentImageIndex]) {
           allMasks[currentImageIndex].forEach(maskData => {
-             drawMask(ctx, maskData, maskData.color, offsetX, offsetY, width, height, zoom, pan);
+             drawMask(ctx, maskData.mask, maskData.color, offsetX, offsetY, width, height, zoom, pan);
           });
        }
  
