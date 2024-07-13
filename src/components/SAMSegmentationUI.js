@@ -157,6 +157,7 @@ const SAMSegmentationUI = () => {
       // Draw the mask
       ctx.globalAlpha = maskOpacity;
       ctx.drawImage(tempCanvas, offsetX, offsetY, width, height);
+      console.log('mask generated')
       ctx.globalAlpha = 1.0;
     };
     img.src = `data:image/png;base64,${maskBase64}`;
