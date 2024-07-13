@@ -35,7 +35,7 @@ const SAMSegmentationUI = () => {
 
   useEffect(() => {
     drawCanvas();
-  }, [currentImageIndex, masks, points, zoom, pan, maskColor]);
+  }, [currentImageIndex, allMasks, currentMask, points, zoom, pan, maskColor, maskOpacity]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -84,11 +84,7 @@ const SAMSegmentationUI = () => {
   
     if (images[currentImageIndex]) {
       const img = images[currentImageIndex];
-      const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
-      const width = img.width * scale;
-      const height = img.height * scale;
-      const offsetX = (canvas.width - width) / 2;
-      const offsetY = (canvas.height - height) / 2;
+      const { width, height, offsetX, offsetY } = fitImageToCanvas(img, canvas);
   
       // Apply zoom and pan
       ctx.save();
@@ -126,6 +122,7 @@ const SAMSegmentationUI = () => {
     }
   };
 
+
   const drawMask = (ctx, maskData, color, offsetX, offsetY, width, height) => {
     const { mask: maskBase64, width: maskWidth, height: maskHeight } = maskData;
     
@@ -157,7 +154,6 @@ const SAMSegmentationUI = () => {
       // Draw the mask
       ctx.globalAlpha = maskOpacity;
       ctx.drawImage(tempCanvas, offsetX, offsetY, width, height);
-      console.log('mask generated')
       ctx.globalAlpha = 1.0;
     };
     img.src = `data:image/png;base64,${maskBase64}`;
@@ -191,56 +187,56 @@ const SAMSegmentationUI = () => {
           normalizedY: normalizedY,
           type: segmentMode 
         };
-        setPoints([...points, newPoint]);
+        setPoints(prevPoints => [...prevPoints, newPoint]);
         
         generateMask([...points, newPoint]);
       }
     }
   };
-
-  const generateMask = async (currentPoints) => {
-    if (images[currentImageIndex] && currentPoints.length > 0) {
-      setIsLoading(true);
-      const formData = new FormData();
-
-      const imageWidth = images[currentImageIndex].width;
-      const imageHeight = images[currentImageIndex].height;
-
-      formData.append('file', await (await fetch(images[currentImageIndex].src)).blob(), 'image.png');
-      formData.append('points', JSON.stringify(currentPoints.map(p => [
-        Math.round(p.normalizedX * imageWidth),
-        Math.round(p.normalizedY * imageHeight)
-      ])));
-      formData.append('labels', JSON.stringify(currentPoints.map(p => p.type === 'add' ? 1 : 0)));
-
-      try {
-        const response = await fetch('http://localhost:8000/predict', {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+    const generateMask = async (currentPoints) => {
+      if (images[currentImageIndex] && currentPoints.length > 0) {
+        setIsLoading(true);
+        const formData = new FormData();
+  
+        const imageWidth = images[currentImageIndex].width;
+        const imageHeight = images[currentImageIndex].height;
+  
+        formData.append('file', await (await fetch(images[currentImageIndex].src)).blob(), 'image.png');
+        formData.append('points', JSON.stringify(currentPoints.map(p => [
+          Math.round(p.normalizedX * imageWidth),
+          Math.round(p.normalizedY * imageHeight)
+        ])));
+        formData.append('labels', JSON.stringify(currentPoints.map(p => p.type === 'add' ? 1 : 0)));
+  
+        try {
+          const response = await fetch('http://localhost:8000/predict', {
+            method: 'POST',
+            body: formData,
+          });
+  
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+  
+          const data = await response.json();
+          console.log("Received mask data:", data);
+          
+          setCurrentMask({
+            mask: data.mask,
+            width: data.width,
+            height: data.height
+          });
+  
+          // Force a redraw of the canvas
+          drawCanvas();
+        } catch (error) {
+          console.error('Error generating mask:', error);
+        } finally {
+          setIsLoading(false);
         }
-
-        const data = await response.json();
-        console.log("Received mask data:", data);
-        
-        setCurrentMask({
-          mask: data.mask,
-          width: data.width,
-          height: data.height
-        });
-
-        // Force a redraw of the canvas
-        drawCanvas();
-      } catch (error) {
-        console.error('Error generating mask:', error);
-      } finally {
-        setIsLoading(false);
       }
-    }
-  };
+    };
+  
 
   const handleWheel = (e) => {
     e.preventDefault();
