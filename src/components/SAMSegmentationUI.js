@@ -238,7 +238,7 @@ const SAMSegmentationUI = () => {
   
 
   const handleWheel = (e) => {
-    e.preventDefault();
+    //e.preventDefault();
     const rect = canvasRef.current.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
