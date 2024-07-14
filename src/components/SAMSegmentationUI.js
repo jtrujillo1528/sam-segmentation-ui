@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useRef, useEffect } from 'react';
-import { Plus, Minus, Tag, Upload, Save, Eye, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Minus, Tag, Upload, Save, Eye, EyeOff, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
@@ -28,6 +28,7 @@ const SAMSegmentationUI = () => {
   const [maskColor, setMaskColor] = useState('#00FF00');
   const [maskOpacity, setMaskOpacity] = useState(0.5);
   const [isLoading, setIsLoading] = useState(false);  // Added isLoading state
+  const [showAllSegments, setShowAllSegments] = useState(true);
   
   
   const canvasRef = useRef(null);
@@ -52,6 +53,11 @@ const SAMSegmentationUI = () => {
       return () => canvas.removeEventListener('wheel', preventDefault);
     }
   }, []);
+
+  const toggleSegmentsVisibility = () => {
+    setShowAllSegments(!showAllSegments);
+    drawCanvas();
+  };
   
   const fitImageToCanvas = (image, canvas) => {
     const canvasRatio = canvas.width / canvas.height;
@@ -92,7 +98,7 @@ const SAMSegmentationUI = () => {
        ctx.drawImage(img, offsetX, offsetY, width, height);
        ctx.restore();
  
-       if (allMasks[currentImageIndex]) {
+       if (showAllSegments && allMasks[currentImageIndex]) {
           allMasks[currentImageIndex].forEach(maskData => {
              drawMask(ctx, maskData.mask, maskData.color, offsetX, offsetY, width, height, zoom, pan);
           });
@@ -438,23 +444,23 @@ const SAMSegmentationUI = () => {
 
   
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-blue-50 text-black">
+    <div className="flex h-screen w-screen overflow-hidden bg-gray-900 text-white">
       {/* Sidebar */}
-      <div className="w-64 h-full bg-white shadow-lg p-4 flex flex-col space-y-4 overflow-y-auto">
+      <div className="w-64 h-full bg-gray-800 shadow-lg p-4 flex flex-col space-y-4 overflow-y-auto">
         <Select 
           value={currentLabel} 
           onValueChange={setCurrentLabel}
           disabled={labels.length === 0}
         >
-          <SelectTrigger className="w-full bg-white text-black">
+          <SelectTrigger className="w-full bg-gray-700 text-white border-blue-500">
             <SelectValue placeholder="Select a label" />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent className="bg-gray-700 text-white">
             {labels.map((label, index) => (
               <SelectItem 
                 key={index} 
                 value={label}
-                className="text-black hover:bg-gray-100"
+                className="text-white hover:bg-gray-600"
               >
                 {label}
               </SelectItem>
@@ -466,30 +472,30 @@ const SAMSegmentationUI = () => {
           value={currentLabel}
           onChange={(e) => setCurrentLabel(e.target.value)}
           placeholder="Enter new label"
-          className="bg-white text-black"
+          className="bg-gray-700 text-white border-blue-500"
         />
 
-        <Button onClick={handleNewLabel} disabled={!currentLabel.trim()} className="bg-teal-500 hover:bg-teal-600 text-black">
+        <Button onClick={handleNewLabel} disabled={!currentLabel.trim()} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
           <Plus className="mr-2 h-4 w-4" /> Add Label
         </Button>
 
-        <Button onClick={handleNewSegment} disabled={!currentLabel || isSegmenting} className="bg-indigo-500 hover:bg-indigo-600 text-black">
+        <Button onClick={handleNewSegment} disabled={!currentLabel || isSegmenting} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
           <Plus className="mr-2 h-4 w-4" /> New Segment
         </Button>
 
-        <Button onClick={() => setSegmentMode('add')} disabled={!isSegmenting} className="bg-green-500 hover:bg-green-600 text-black">
+        <Button onClick={() => setSegmentMode('add')} disabled={!isSegmenting} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
           Add Regions
         </Button>
 
-        <Button onClick={() => setSegmentMode('remove')} disabled={!isSegmenting} className="bg-red-500 hover:bg-red-600 text-black">
+        <Button onClick={() => setSegmentMode('remove')} disabled={!isSegmenting} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
           Remove Regions
         </Button>
 
-        <Button onClick={handleSaveSegment} disabled={!isSegmenting || points.length === 0} className="bg-purple-500 hover:bg-purple-600 text-black">
+        <Button onClick={handleSaveSegment} disabled={!isSegmenting || points.length === 0} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
           <Save className="mr-2 h-4 w-4" /> Save Segment
         </Button>
 
-        <Button onClick={() => fileInputRef.current.click()} className="bg-blue-500 hover:bg-blue-600 text-black">
+        <Button onClick={() => fileInputRef.current.click()} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
           <Upload className="mr-2 h-4 w-4" /> Load Images
         </Button>
 
@@ -502,32 +508,19 @@ const SAMSegmentationUI = () => {
           className="hidden"
         />
 
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button className="bg-yellow-500 hover:bg-yellow-600 text-black">
-              <Eye className="mr-2 h-4 w-4" /> View Segments
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle className="text-black">Saved Segments</DialogTitle>
-            </DialogHeader>
-            <div className="mt-4">
-              <pre className="bg-gray-100 p-4 rounded-md overflow-auto max-h-[300px] text-xs text-black">
-                {formatSegments()}
-              </pre>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <Button onClick={toggleSegmentsVisibility} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
+          {showAllSegments ? <EyeOff className="mr-2 h-4 w-4" /> : <Eye className="mr-2 h-4 w-4" />}
+          {showAllSegments ? 'Hide Segments' : 'Show Segments'}
+        </Button>
 
         <div className="flex items-center space-x-2">
           <input
             type="color"
             value={maskColor}
             onChange={(e) => setMaskColor(e.target.value)}
-            className="w-8 h-8"
+            className="w-8 h-8 bg-gray-700 border border-blue-500"
           />
-          <Button onClick={generateRandomColor} className="text-xs">
+          <Button onClick={generateRandomColor} className="text-xs bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
             Random Color
           </Button>
         </div>
@@ -547,20 +540,20 @@ const SAMSegmentationUI = () => {
           />
         </div>
 
-        {isLoading && <span className="text-black">Generating mask...</span>}
+        {isLoading && <span className="text-white">Generating mask...</span>}
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col bg-gray-900">
         {/* Navigation Controls */}
         <div className="flex justify-between items-center p-4">
-          <Button onClick={handlePrevImage} disabled={currentImageIndex === 0} className="bg-gray-500 hover:bg-gray-600 text-black">
+          <Button onClick={handlePrevImage} disabled={currentImageIndex === 0} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
             <ChevronLeft className="mr-2 h-4 w-4" /> Previous Image
           </Button>
-          <span className="text-lg font-semibold text-black">
+          <span className="text-lg font-semibold text-white">
             Image {currentImageIndex + 1} of {images.length}
           </span>
-          <Button onClick={handleNextImage} disabled={currentImageIndex === images.length - 1} className="bg-gray-500 hover:bg-gray-600 text-black">
+          <Button onClick={handleNextImage} disabled={currentImageIndex === images.length - 1} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
             Next Image <ChevronRight className="ml-2 h-4 w-4" />
           </Button>
         </div>
@@ -577,7 +570,7 @@ const SAMSegmentationUI = () => {
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseLeave}
             onWheel={handleWheel}
-            className="border border-gray-300 bg-white max-w-full max-h-full"
+            className="border border-gray-600 bg-black max-w-full max-h-full"
           />
         </div>
       </div>
