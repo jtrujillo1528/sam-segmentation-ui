@@ -1,11 +1,12 @@
 'use client';
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Plus, Minus, Tag, Upload, Save, Eye, EyeOff, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { Slider } from "./ui/slider";
+import { debounce } from 'lodash';  // Make sure to install and import lodash
 
 
 
@@ -55,6 +56,8 @@ const SAMSegmentationUI = () => {
     };
     updateCanvas();
   }, [currentImageIndex, images, points, zoom, pan, maskColor, maskOpacity, showAllSegments]);
+
+
 
   const toggleSegmentsVisibility = () => {
     setShowAllSegments(prevState => !prevState);
@@ -121,60 +124,83 @@ const SAMSegmentationUI = () => {
     });
   };
   
-  const drawCanvas = async () => {
+  const drawCanvas = useCallback(async () => {
     const canvas = canvasRef.current;
     if (!canvas || images.length === 0) return;
   
     const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Create an off-screen canvas for double buffering
+    const offscreenCanvas = document.createElement('canvas');
+    offscreenCanvas.width = canvas.width;
+    offscreenCanvas.height = canvas.height;
+    const offscreenCtx = offscreenCanvas.getContext('2d');
   
     const currentImage = images[currentImageIndex];
     if (currentImage) {
       const img = new Image();
-      img.onload = async () => {
-        const { width, height, offsetX, offsetY } = fitImageToCanvas(img, canvas);
-  
-        ctx.save();
-        ctx.translate(pan.x, pan.y);
-        ctx.scale(zoom, zoom);
-        ctx.drawImage(img, offsetX, offsetY, width, height);
-        ctx.restore();
-  
-        const maskDrawingPromises = [];
-  
-        if (showAllSegments && currentImage.masks) {
-          currentImage.masks.forEach(maskData => {
-            maskDrawingPromises.push(drawMask(ctx, maskData.mask, maskData.color, offsetX, offsetY, width, height, zoom, pan));
-          });
-        }
-  
-        if (currentMask) {
-          maskDrawingPromises.push(drawMask(ctx, currentMask, maskColor, offsetX, offsetY, width, height, zoom, pan));
-        }
-  
-        await Promise.all(maskDrawingPromises);
-  
-        // Draw points
-        ctx.save();
-        ctx.translate(pan.x, pan.y);
-        ctx.scale(zoom, zoom);
-  
-        const pointRadius = 5 / zoom;
-        points.forEach((point) => {
-          const canvasX = offsetX + point.normalizedX * width;
-          const canvasY = offsetY + point.normalizedY * height;
-  
-          ctx.beginPath();
-          ctx.arc(canvasX, canvasY, pointRadius, 0, 2 * Math.PI);
-          ctx.fillStyle = point.type === 1 ? 'blue' : 'red';
-          ctx.fill();
-        });
-  
-        ctx.restore();
-      };
       img.src = `data:image/png;base64,${currentImage.image}`;
+      
+      await new Promise((resolve) => {
+        img.onload = async () => {
+          const { width, height, offsetX, offsetY } = fitImageToCanvas(img, canvas);
+  
+          offscreenCtx.save();
+          offscreenCtx.translate(pan.x, pan.y);
+          offscreenCtx.scale(zoom, zoom);
+          offscreenCtx.drawImage(img, offsetX, offsetY, width, height);
+          offscreenCtx.restore();
+  
+          const maskDrawingPromises = [];
+  
+          if (showAllSegments && currentImage.masks) {
+            currentImage.masks.forEach(maskData => {
+              maskDrawingPromises.push(drawMask(offscreenCtx, maskData.mask, maskData.color, offsetX, offsetY, width, height, zoom, pan));
+            });
+          }
+  
+          if (currentMask) {
+            maskDrawingPromises.push(drawMask(offscreenCtx, currentMask, maskColor, offsetX, offsetY, width, height, zoom, pan));
+          }
+  
+          await Promise.all(maskDrawingPromises);
+  
+          // Draw points
+          offscreenCtx.save();
+          offscreenCtx.translate(pan.x, pan.y);
+          offscreenCtx.scale(zoom, zoom);
+  
+          const pointRadius = 5 / zoom;
+          points.forEach((point) => {
+            const canvasX = offsetX + point.normalizedX * width;
+            const canvasY = offsetY + point.normalizedY * height;
+  
+            offscreenCtx.beginPath();
+            offscreenCtx.arc(canvasX, canvasY, pointRadius, 0, 2 * Math.PI);
+            offscreenCtx.fillStyle = point.type === 1 ? 'blue' : 'red';
+            offscreenCtx.fill();
+          });
+  
+          offscreenCtx.restore();
+  
+          // Copy the off-screen canvas to the main canvas in a single operation
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(offscreenCanvas, 0, 0);
+  
+          resolve();
+        };
+      });
     }
-  };
+  }, [images, currentImageIndex, zoom, pan, showAllSegments, currentMask, maskColor, maskOpacity, points, fitImageToCanvas, drawMask]);
+
+  const debouncedDrawCanvas = useCallback(
+    debounce(() => drawCanvas(), 16),  // 60 fps
+    [drawCanvas]
+  );
+
+  useEffect(() => {
+    debouncedDrawCanvas();
+  }, [currentImageIndex, images, points, zoom, pan, maskColor, maskOpacity, showAllSegments, debouncedDrawCanvas]);
 
   const handleCanvasClick = (e) => {
     if (e.button === 0 && images[currentImageIndex] && currentLabel && isSegmenting && segmentMode !== null) {
@@ -281,6 +307,12 @@ const SAMSegmentationUI = () => {
 
     setZoom(newZoom);
     setPan(newPan);
+
+    requestAnimationFrame(() => {
+      setZoom(newZoom);
+      setPan(newPan);
+      debouncedDrawCanvas();
+    });
   };
 
   const handleMouseDown = (e) => {
@@ -295,8 +327,12 @@ const SAMSegmentationUI = () => {
     if (isPanning) {
       const deltaX = e.clientX - lastPanPoint.x;
       const deltaY = e.clientY - lastPanPoint.y;
-      setPan({ x: pan.x + deltaX, y: pan.y + deltaY });
-      setLastPanPoint({ x: e.clientX, y: e.clientY });
+      
+      requestAnimationFrame(() => {
+        setPan({ x: pan.x + deltaX, y: pan.y + deltaY });
+        setLastPanPoint({ x: e.clientX, y: e.clientY });
+        debouncedDrawCanvas();
+      });
     }
   };
 
