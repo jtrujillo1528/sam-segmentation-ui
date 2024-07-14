@@ -438,71 +438,61 @@ const SAMSegmentationUI = () => {
 
   
   return (
-    <div className="flex flex-col items-center p-8 bg-blue-50 text-black">
-      <div className="mb-8 grid grid-cols-2 gap-6 w-full max-w-5xl">
-        <div className="col-span-2">
+    <div className="flex h-screen w-screen overflow-hidden bg-blue-50 text-black">
+      {/* Sidebar */}
+      <div className="w-64 h-full bg-white shadow-lg p-4 flex flex-col space-y-4 overflow-y-auto">
         <Select 
-            value={currentLabel} 
-            onValueChange={setCurrentLabel}
-            disabled={labels.length === 0}
-          >
-            <SelectTrigger className="w-full bg-white text-black">
-              <SelectValue placeholder="Select a label" />
-            </SelectTrigger>
-            <SelectContent>
-              {labels.map((label, index) => (
-                <SelectItem 
-                  key={index} 
-                  value={label}
-                  className="text-black hover:bg-gray-100"
-                >
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="mb-4 flex space-x-2 items-center">
-        <span>Mask Opacity:</span>
-        <Slider
-          value={[maskOpacity]}
-          onValueChange={([value]) => {
-            setMaskOpacity(value);
-            drawCanvas();
-          }}
-          min={0}
-          max={1}
-          step={0.01}
-          className="w-48"
-        />
-        <Button onClick={generateRandomColor}>
-          Random Mask Color
-        </Button>
-      </div>
+          value={currentLabel} 
+          onValueChange={setCurrentLabel}
+          disabled={labels.length === 0}
+        >
+          <SelectTrigger className="w-full bg-white text-black">
+            <SelectValue placeholder="Select a label" />
+          </SelectTrigger>
+          <SelectContent>
+            {labels.map((label, index) => (
+              <SelectItem 
+                key={index} 
+                value={label}
+                className="text-black hover:bg-gray-100"
+              >
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
         <Input
           value={currentLabel}
           onChange={(e) => setCurrentLabel(e.target.value)}
           placeholder="Enter new label"
           className="bg-white text-black"
         />
+
         <Button onClick={handleNewLabel} disabled={!currentLabel.trim()} className="bg-teal-500 hover:bg-teal-600 text-black">
           <Plus className="mr-2 h-4 w-4" /> Add Label
         </Button>
+
         <Button onClick={handleNewSegment} disabled={!currentLabel || isSegmenting} className="bg-indigo-500 hover:bg-indigo-600 text-black">
           <Plus className="mr-2 h-4 w-4" /> New Segment
         </Button>
+
         <Button onClick={() => setSegmentMode('add')} disabled={!isSegmenting} className="bg-green-500 hover:bg-green-600 text-black">
           Add Regions
         </Button>
+
         <Button onClick={() => setSegmentMode('remove')} disabled={!isSegmenting} className="bg-red-500 hover:bg-red-600 text-black">
           Remove Regions
         </Button>
+
         <Button onClick={handleSaveSegment} disabled={!isSegmenting || points.length === 0} className="bg-purple-500 hover:bg-purple-600 text-black">
           <Save className="mr-2 h-4 w-4" /> Save Segment
         </Button>
+
         <Button onClick={() => fileInputRef.current.click()} className="bg-blue-500 hover:bg-blue-600 text-black">
           <Upload className="mr-2 h-4 w-4" /> Load Images
         </Button>
+
         <input
           type="file"
           ref={fileInputRef}
@@ -511,6 +501,7 @@ const SAMSegmentationUI = () => {
           multiple
           className="hidden"
         />
+
         <Dialog>
           <DialogTrigger asChild>
             <Button className="bg-yellow-500 hover:bg-yellow-600 text-black">
@@ -528,50 +519,68 @@ const SAMSegmentationUI = () => {
             </div>
           </DialogContent>
         </Dialog>
+
+        <div className="flex items-center space-x-2">
+          <input
+            type="color"
+            value={maskColor}
+            onChange={(e) => setMaskColor(e.target.value)}
+            className="w-8 h-8"
+          />
+          <Button onClick={generateRandomColor} className="text-xs">
+            Random Color
+          </Button>
         </div>
-      <div className="mb-6 flex space-x-4 items-center">
-        <input
-          type="color"
-          value={maskColor}
-          onChange={(e) => setMaskColor(e.target.value)}
-          className="w-12 h-12"
-        />
-        <div className="flex items-center space-x-4">
-          <span className="text-black">Opacity:</span>
+
+        <div className="flex flex-col space-y-2">
+          <span className="text-sm">Mask Opacity:</span>
           <Slider
             value={[maskOpacity]}
-            onValueChange={([value]) => setMaskOpacity(value)}
+            onValueChange={([value]) => {
+              setMaskOpacity(value);
+              drawCanvas();
+            }}
             min={0}
             max={1}
             step={0.01}
-            className="w-48"
+            className="w-full"
           />
         </div>
+
         {isLoading && <span className="text-black">Generating mask...</span>}
       </div>
-      <div className="flex justify-between w-full max-w-5xl mb-6">
-        <Button onClick={handlePrevImage} disabled={currentImageIndex === 0} className="bg-gray-500 hover:bg-gray-600 text-black">
-          <ChevronLeft className="mr-2 h-4 w-4" /> Previous Image
-        </Button>
-        <span className="text-lg font-semibold text-black">
-          Image {currentImageIndex + 1} of {images.length}
-        </span>
-        <Button onClick={handleNextImage} disabled={currentImageIndex === images.length - 1} className="bg-gray-500 hover:bg-gray-600 text-black">
-          Next Image <ChevronRight className="ml-2 h-4 w-4" />
-        </Button>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col">
+        {/* Navigation Controls */}
+        <div className="flex justify-between items-center p-4">
+          <Button onClick={handlePrevImage} disabled={currentImageIndex === 0} className="bg-gray-500 hover:bg-gray-600 text-black">
+            <ChevronLeft className="mr-2 h-4 w-4" /> Previous Image
+          </Button>
+          <span className="text-lg font-semibold text-black">
+            Image {currentImageIndex + 1} of {images.length}
+          </span>
+          <Button onClick={handleNextImage} disabled={currentImageIndex === images.length - 1} className="bg-gray-500 hover:bg-gray-600 text-black">
+            Next Image <ChevronRight className="ml-2 h-4 w-4" />
+          </Button>
+        </div>
+
+        {/* Canvas */}
+        <div className="flex-1 flex items-center justify-center p-4">
+          <canvas
+            ref={canvasRef}
+            width={800}
+            height={600}
+            onClick={handleCanvasClick}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseLeave}
+            onWheel={handleWheel}
+            className="border border-gray-300 bg-white max-w-full max-h-full"
+          />
+        </div>
       </div>
-      <canvas
-        ref={canvasRef}
-        width={800}
-        height={600}
-        onClick={handleCanvasClick}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseLeave}
-        onWheel={handleWheel}
-        className="border border-gray-300 bg-white"
-      />
     </div>
   );
 };
