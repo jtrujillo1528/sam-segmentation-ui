@@ -35,10 +35,6 @@ const SAMSegmentationUI = () => {
   const fileInputRef = useRef(null);
 
   useEffect(() => {
-    drawCanvas();
-  }, [currentImageIndex, allMasks, currentMask, points, zoom, pan, maskColor, maskOpacity]);
-
-  useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas) {
       canvas.style.cursor = isPanning ? 'grabbing' : 'default';
@@ -54,11 +50,17 @@ const SAMSegmentationUI = () => {
     }
   }, []);
 
+  useEffect(() => {
+    const updateCanvas = async () => {
+      await drawCanvas();
+    };
+    updateCanvas();
+  }, [currentImageIndex, allMasks, currentMask, points, zoom, pan, maskColor, maskOpacity, showAllSegments]);
+
   const toggleSegmentsVisibility = () => {
-    setShowAllSegments(!showAllSegments);
-    drawCanvas();
+    setShowAllSegments(prevState => !prevState);
+    // Remove the drawCanvas call from here
   };
-  
   const fitImageToCanvas = (image, canvas) => {
     const canvasRatio = canvas.width / canvas.height;
     const imageRatio = image.width / image.height;
@@ -81,88 +83,98 @@ const SAMSegmentationUI = () => {
   };
 
  
-  const drawCanvas = () => {
+  const drawCanvas = async () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
- 
+  
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
- 
+  
     if (images[currentImageIndex]) {
-       const img = images[currentImageIndex];
-       const { width, height, offsetX, offsetY } = fitImageToCanvas(img, canvas);
- 
-       ctx.save();
-       ctx.translate(pan.x, pan.y);
-       ctx.scale(zoom, zoom);
-       ctx.drawImage(img, offsetX, offsetY, width, height);
-       ctx.restore();
- 
-       if (showAllSegments && allMasks[currentImageIndex]) {
-          allMasks[currentImageIndex].forEach(maskData => {
-             drawMask(ctx, maskData.mask, maskData.color, offsetX, offsetY, width, height, zoom, pan);
-          });
-       }
- 
-       if (currentMask) {
-          drawMask(ctx, currentMask, maskColor, offsetX, offsetY, width, height, zoom, pan);
-       }
- 
-       ctx.save();
-       ctx.translate(pan.x, pan.y);
-       ctx.scale(zoom, zoom);
- 
-       const pointRadius = 5 / zoom;
-       points.forEach((point) => {
-          const canvasX = offsetX + point.normalizedX * width;
-          const canvasY = offsetY + point.normalizedY * height;
- 
-          ctx.beginPath();
-          ctx.arc(canvasX, canvasY, pointRadius, 0, 2 * Math.PI);
-          ctx.fillStyle = point.type === 'add' ? 'blue' : 'red';
-          ctx.fill();
-       });
- 
-       ctx.restore();
+      const img = images[currentImageIndex];
+      const { width, height, offsetX, offsetY } = fitImageToCanvas(img, canvas);
+  
+      ctx.save();
+      ctx.translate(pan.x, pan.y);
+      ctx.scale(zoom, zoom);
+      ctx.drawImage(img, offsetX, offsetY, width, height);
+      ctx.restore();
+  
+      const maskDrawingPromises = [];
+  
+      // Use the current showAllSegments state
+      if (showAllSegments && allMasks[currentImageIndex]) {
+        allMasks[currentImageIndex].forEach(maskData => {
+          maskDrawingPromises.push(drawMask(ctx, maskData.mask, maskData.color, offsetX, offsetY, width, height, zoom, pan));
+        });
+      }
+  
+      if (currentMask) {
+        maskDrawingPromises.push(drawMask(ctx, currentMask, maskColor, offsetX, offsetY, width, height, zoom, pan));
+      }
+  
+      await Promise.all(maskDrawingPromises);
+  
+      ctx.save();
+      ctx.translate(pan.x, pan.y);
+      ctx.scale(zoom, zoom);
+  
+      const pointRadius = 5 / zoom;
+      points.forEach((point) => {
+        const canvasX = offsetX + point.normalizedX * width;
+        const canvasY = offsetY + point.normalizedY * height;
+  
+        ctx.beginPath();
+        ctx.arc(canvasX, canvasY, pointRadius, 0, 2 * Math.PI);
+        ctx.fillStyle = point.type === 'add' ? 'blue' : 'red';
+        ctx.fill();
+      });
+  
+      ctx.restore();
     }
- };
+  };
+  
 
-  const drawMask = (ctx, maskData, color, offsetX, offsetY, width, height, zoom, pan) => {
+ const drawMask = (ctx, maskData, color, offsetX, offsetY, width, height, zoom, pan) => {
+  return new Promise((resolve) => {
     const { mask: maskBase64, width: maskWidth, height: maskHeight } = maskData;
     const img = new Image();
     img.onload = () => {
-       const tempCanvas = document.createElement('canvas');
-       tempCanvas.width = maskWidth;
-       tempCanvas.height = maskHeight;
-       const tempCtx = tempCanvas.getContext('2d');
-       tempCtx.drawImage(img, 0, 0);
- 
-       const imageData = tempCtx.getImageData(0, 0, maskWidth, maskHeight);
-       const data = imageData.data;
- 
-       const r = parseInt(color.slice(1, 3), 16);
-       const g = parseInt(color.slice(3, 5), 16);
-       const b = parseInt(color.slice(5, 7), 16);
-       for (let i = 0; i < data.length; i += 4) {
-          const alpha = data[i];
-          data[i] = r;
-          data[i + 1] = g;
-          data[i + 2] = b;
-          data[i + 3] = alpha;
-       }
- 
-       tempCtx.putImageData(imageData, 0, 0);
- 
-       ctx.save();
-       ctx.translate(pan.x, pan.y);
-       ctx.scale(zoom, zoom);
-       ctx.globalAlpha = maskOpacity;
-       ctx.drawImage(tempCanvas, offsetX, offsetY, width, height);
-       ctx.globalAlpha = 1.0;
-       ctx.restore();
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = maskWidth;
+      tempCanvas.height = maskHeight;
+      const tempCtx = tempCanvas.getContext('2d');
+      tempCtx.drawImage(img, 0, 0);
+
+      const imageData = tempCtx.getImageData(0, 0, maskWidth, maskHeight);
+      const data = imageData.data;
+
+      const r = parseInt(color.slice(1, 3), 16);
+      const g = parseInt(color.slice(3, 5), 16);
+      const b = parseInt(color.slice(5, 7), 16);
+      for (let i = 0; i < data.length; i += 4) {
+        const alpha = data[i];
+        data[i] = r;
+        data[i + 1] = g;
+        data[i + 2] = b;
+        data[i + 3] = alpha;
+      }
+
+      tempCtx.putImageData(imageData, 0, 0);
+
+      ctx.save();
+      ctx.translate(pan.x, pan.y);
+      ctx.scale(zoom, zoom);
+      ctx.globalAlpha = maskOpacity;
+      ctx.drawImage(tempCanvas, offsetX, offsetY, width, height);
+      ctx.globalAlpha = 1.0;
+      ctx.restore();
+
+      resolve();
     };
     img.src = `data:image/png;base64,${maskBase64}`;
- };
+  });
+};
 
   const handleCanvasClick = (e) => {
     if (e.button === 0 && images[currentImageIndex] && currentLabel && isSegmenting && segmentMode) {
@@ -233,7 +245,7 @@ const SAMSegmentationUI = () => {
           });
   
           // Force a redraw of the canvas
-          drawCanvas();
+          await drawCanvas();
         } catch (error) {
           console.error('Error generating mask:', error);
         } finally {
@@ -512,7 +524,6 @@ const SAMSegmentationUI = () => {
           {showAllSegments ? <EyeOff className="mr-2 h-4 w-4" /> : <Eye className="mr-2 h-4 w-4" />}
           {showAllSegments ? 'Hide Segments' : 'Show Segments'}
         </Button>
-
         <div className="flex items-center space-x-2">
           <input
             type="color"
