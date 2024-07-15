@@ -286,34 +286,30 @@ const SAMSegmentationUI = () => {
   };
   
 
-  const handleWheel = (e) => {
+  const handleWheel = useCallback((e) => {
     //e.preventDefault();
     const rect = canvasRef.current.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
-
+  
     const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
     const newZoom = Math.max(0.1, Math.min(10, zoom * zoomFactor));
-
+  
     const zoomPoint = {
       x: (mouseX - pan.x) / zoom,
       y: (mouseY - pan.y) / zoom,
     };
-
+  
     const newPan = {
       x: mouseX - zoomPoint.x * newZoom,
       y: mouseY - zoomPoint.y * newZoom,
     };
-
-    setZoom(newZoom);
-    setPan(newPan);
-
+  
     requestAnimationFrame(() => {
       setZoom(newZoom);
       setPan(newPan);
-      debouncedDrawCanvas();
     });
-  };
+  }, [zoom, pan]);
 
   const handleMouseDown = (e) => {
     if (e.button === 1) {
@@ -323,18 +319,29 @@ const SAMSegmentationUI = () => {
     }
   };
 
-  const handleMouseMove = (e) => {
+  const handleMouseMove = useCallback((e) => {
     if (isPanning) {
       const deltaX = e.clientX - lastPanPoint.x;
       const deltaY = e.clientY - lastPanPoint.y;
       
       requestAnimationFrame(() => {
-        setPan({ x: pan.x + deltaX, y: pan.y + deltaY });
+        setPan(prevPan => ({
+          x: prevPan.x + deltaX,
+          y: prevPan.y + deltaY
+        }));
         setLastPanPoint({ x: e.clientX, y: e.clientY });
-        debouncedDrawCanvas();
       });
     }
-  };
+  }, [isPanning, lastPanPoint]);
+  
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const preventDefault = (e) => e.preventDefault();
+      canvas.addEventListener('wheel', preventDefault, { passive: false });
+      return () => canvas.removeEventListener('wheel', preventDefault);
+    }
+  }, []);
 
   const handleMouseUp = (e) => {
     if (e.button === 1) {
