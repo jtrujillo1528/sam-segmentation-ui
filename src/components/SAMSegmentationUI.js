@@ -29,8 +29,9 @@ const SAMSegmentationUI = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [showAllSegments, setShowAllSegments] = useState(true);
   const [currentLabel, setCurrentLabel] = useState('');
-  const [selectedMaskIndex, setSelectedMaskIndex] = useState(null);
   const [isEditingMask, setIsEditingMask] = useState(false);
+  const [selectedMaskIndex, setSelectedMaskIndex] = useState(null);
+  const [editingLabel, setEditingLabel] = useState('');
 
   const canvasRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -257,7 +258,15 @@ const SAMSegmentationUI = () => {
       const normalizedY = (adjustedY - offsetY) / height;
     
       if (normalizedX >= 0 && normalizedX <= 1 && normalizedY >= 0 && normalizedY <= 1) {
-        if (isSegmenting || isEditingMask) {
+        if (isSegmenting) {
+          const newPoint = { 
+            normalizedX: normalizedX,
+            normalizedY: normalizedY,
+            type: segmentMode === 'add' ? 1 : 0
+          };
+          setPoints(prevPoints => [...prevPoints, newPoint]);
+          generateMask([...points, newPoint]);
+        } else if (isEditingMask) {
           const newPoint = { 
             normalizedX: normalizedX,
             normalizedY: normalizedY,
@@ -271,11 +280,8 @@ const SAMSegmentationUI = () => {
             const mask = images[currentImageIndex].masks[i];
             if (await isPointInMask(normalizedX, normalizedY, mask.mask)) {
               setSelectedMaskIndex(i);
-              setIsEditingMask(true);
-              setPoints(mask.points);
               setMaskColor(mask.color);
-              setCurrentLabel(labels[mask.label]);
-              setCurrentMask(mask.mask);
+              setEditingLabel(labels[mask.label]);
               break;
             }
           }
@@ -284,6 +290,15 @@ const SAMSegmentationUI = () => {
     };
   
 
+    const startEditingMask = () => {
+      if (selectedMaskIndex !== null) {
+        const selectedMask = images[currentImageIndex].masks[selectedMaskIndex];
+        setIsEditingMask(true);
+        setPoints(selectedMask.points);
+        setCurrentMask(selectedMask.mask);
+        setEditingLabel(labels[selectedMask.label]);
+      }
+    };
 
   const generateMask = async (currentPoints) => {
     if (images[currentImageIndex] && currentPoints.length > 0) {
@@ -540,13 +555,17 @@ const initializeSAM = async (image) => {
     }
   };
 
-  const updateSelectedMask = (property, value) => {
+
+  const updateSelectedMask = () => {
     setImages(prevImages => {
       const newImages = [...prevImages];
       const newMasks = [...newImages[currentImageIndex].masks];
       newMasks[selectedMaskIndex] = {
         ...newMasks[selectedMaskIndex],
-        [property]: value
+        points: points,
+        mask: currentMask,
+        color: maskColor,
+        label: labels.indexOf(editingLabel)
       };
       newImages[currentImageIndex] = {
         ...newImages[currentImageIndex],
@@ -575,17 +594,25 @@ const initializeSAM = async (image) => {
   };
 
   const saveMaskEdits = () => {
-    updateSelectedMask('points', points);
-    updateSelectedMask('mask', currentMask);
+    updateSelectedMask();
     setIsEditingMask(false);
     setPoints([]);
     setCurrentMask(null);
+    setSelectedMaskIndex(null);
+    setEditingLabel('');
   };
-
   const cancelMaskEdits = () => {
     setIsEditingMask(false);
     setPoints([]);
     setCurrentMask(null);
+    setSelectedMaskIndex(null);
+    setEditingLabel('');
+  };
+
+  const handleNewLabelDuringEdit = () => {
+    if (editingLabel && editingLabel.trim() !== '' && !labels.includes(editingLabel)) {
+      setLabels(prevLabels => [...prevLabels, editingLabel]);
+    }
   };
 
   const cancelMaskGeneration = () => {
@@ -599,47 +626,81 @@ const initializeSAM = async (image) => {
     <div className="flex h-screen w-screen overflow-hidden bg-gray-900 text-white">
       {/* Sidebar */}
       <div className="w-64 h-full bg-gray-800 shadow-lg p-4 flex flex-col space-y-4 overflow-y-auto">
-        <Select 
-          value={currentLabel} 
-          onValueChange={setCurrentLabel}
-          disabled={labels.length === 0 || isEditingMask}
-        >
-          <SelectTrigger className="w-full bg-gray-700 text-white border-blue-500">
-            <SelectValue placeholder="Select a label" />
-          </SelectTrigger>
-          <SelectContent className="bg-gray-700 text-white">
-            {labels.map((label, index) => (
-              <SelectItem 
-                key={index} 
-                value={label}
-                className="text-white hover:bg-gray-600"
-              >
-                {label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {!isEditingMask && !isSegmenting ? (
+          <>
+            <Select 
+              value={currentLabel} 
+              onValueChange={setCurrentLabel}
+              disabled={labels.length === 0}
+            >
+              <SelectTrigger className="w-full bg-gray-700 text-white border-blue-500">
+                <SelectValue placeholder="Select a label" />
+              </SelectTrigger>
+              <SelectContent className="bg-gray-700 text-white">
+                {labels.map((label, index) => (
+                  <SelectItem 
+                    key={index} 
+                    value={label}
+                    className="text-white hover:bg-gray-600"
+                  >
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-        <Input
-          value={currentLabel}
-          onChange={(e) => setCurrentLabel(e.target.value)}
-          placeholder="Enter new label"
-          className="bg-gray-700 text-white border-blue-500"
-          disabled={isEditingMask}
-        />
+            <Input
+              value={currentLabel}
+              onChange={(e) => setCurrentLabel(e.target.value)}
+              placeholder="Enter new label"
+              className="bg-gray-700 text-white border-blue-500"
+            />
 
-        <Button onClick={handleNewLabel} disabled={!currentLabel.trim() || isEditingMask} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
-          <Plus className="mr-2 h-4 w-4" /> Add Label
-        </Button>
+            <Button onClick={handleNewLabel} disabled={!currentLabel.trim()} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
+              <Plus className="mr-2 h-4 w-4" /> Add Label
+            </Button>
 
-        {!isEditingMask ? (
-          <Button onClick={handleNewSegment} disabled={!currentLabel || isSegmenting} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
-            <Plus className="mr-2 h-4 w-4" /> New Segment
-          </Button>
+            <Button onClick={handleNewSegment} disabled={!currentLabel} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
+              <Plus className="mr-2 h-4 w-4" /> New Segment
+            </Button>
+
+            {selectedMaskIndex !== null && (
+              <Button onClick={startEditingMask} className="bg-blue-600 hover:bg-blue-700 text-white">
+                <Edit className="mr-2 h-4 w-4" /> Edit Selected Mask
+              </Button>
+            )}
+          </>
+        ) : isEditingMask ? (
+          <>
+            <Input
+              value={editingLabel}
+              onChange={(e) => setEditingLabel(e.target.value)}
+              placeholder="Edit or enter new label"
+              className="bg-gray-700 text-white border-blue-500"
+            />
+
+            <Button onClick={handleNewLabelDuringEdit} disabled={!editingLabel.trim()} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
+              <Plus className="mr-2 h-4 w-4" /> Add New Label
+            </Button>
+
+            <Button onClick={saveMaskEdits} className="bg-green-600 hover:bg-green-700 text-white">
+              <Save className="mr-2 h-4 w-4" /> Save Edits
+            </Button>
+
+            <Button onClick={cancelMaskEdits} className="bg-red-600 hover:bg-red-700 text-white">
+              <X className="mr-2 h-4 w-4" /> Cancel Edits
+            </Button>
+          </>
         ) : (
-          <Button onClick={cancelMaskEdits} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
-            <X className="mr-2 h-4 w-4" /> Cancel Edit
-          </Button>
+          <>
+            <Button onClick={handleSaveSegment} disabled={points.length === 0} className="bg-green-600 hover:bg-green-700 text-white">
+              <Save className="mr-2 h-4 w-4" /> Save Segment
+            </Button>
+
+            <Button onClick={cancelMaskGeneration} className="bg-red-600 hover:bg-red-700 text-white">
+              <X className="mr-2 h-4 w-4" /> Cancel Segment
+            </Button>
+          </>
         )}
 
         <Button onClick={() => setSegmentMode('add')} disabled={!isSegmenting && !isEditingMask} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
@@ -649,18 +710,6 @@ const initializeSAM = async (image) => {
         <Button onClick={() => setSegmentMode('remove')} disabled={!isSegmenting && !isEditingMask} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
           Remove Regions
         </Button>
-
-        {isSegmenting || isEditingMask ? (
-          <Button onClick={isEditingMask ? saveMaskEdits : handleSaveSegment} disabled={points.length === 0} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
-            <Save className="mr-2 h-4 w-4" /> Save {isEditingMask ? 'Edits' : 'Segment'}
-          </Button>
-        ) : null}
-
-        {isEditingMask && (
-          <Button onClick={deleteMask} className="bg-red-600 hover:bg-red-700 text-white">
-            Delete Mask
-          </Button>
-        )}
 
         <Button onClick={() => fileInputRef.current.click()} disabled={isSegmenting || isEditingMask} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
           <Upload className="mr-2 h-4 w-4" /> Load Images
@@ -684,12 +733,7 @@ const initializeSAM = async (image) => {
           <input
             type="color"
             value={maskColor}
-            onChange={(e) => {
-              setMaskColor(e.target.value);
-              if (isEditingMask) {
-                updateSelectedMask('color', e.target.value);
-              }
-            }}
+            onChange={(e) => setMaskColor(e.target.value)}
             className="w-8 h-8 bg-gray-700 border border-blue-500"
           />
           <Button onClick={generateRandomColor} className="text-xs bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
