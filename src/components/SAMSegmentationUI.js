@@ -29,8 +29,6 @@ const SAMSegmentationUI = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [showAllSegments, setShowAllSegments] = useState(true);
   const [currentLabel, setCurrentLabel] = useState('');
-  const [selectedMaskIndex, setSelectedMaskIndex] = useState(null);
-  const [isEditingMask, setIsEditingMask] = useState(false);
 
   const canvasRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -86,7 +84,7 @@ const SAMSegmentationUI = () => {
     return { width, height, offsetX, offsetY };
   };
  
-  const drawMask = useCallback((ctx, maskBase64, color, offsetX, offsetY, width, height, zoom, pan, isSelected) => {
+  const drawMask = (ctx, maskBase64, color, offsetX, offsetY, width, height, zoom, pan) => {
     return new Promise((resolve) => {
       const img = new Image();
       img.onload = () => {
@@ -117,13 +115,6 @@ const SAMSegmentationUI = () => {
         ctx.scale(zoom, zoom);
         ctx.globalAlpha = maskOpacity;
         ctx.drawImage(tempCanvas, offsetX, offsetY, width, height);
-  
-        if (isSelected) {
-          ctx.strokeStyle = 'blue';
-          ctx.lineWidth = 2 / zoom;
-          ctx.strokeRect(offsetX, offsetY, width, height);
-        }
-  
         ctx.globalAlpha = 1.0;
         ctx.restore();
   
@@ -131,7 +122,7 @@ const SAMSegmentationUI = () => {
       };
       img.src = `data:image/png;base64,${maskBase64}`;
     });
-  }, [maskOpacity]);
+  };
   
   const drawCanvas = useCallback(async () => {
     const canvas = canvasRef.current;
@@ -163,14 +154,13 @@ const SAMSegmentationUI = () => {
           const maskDrawingPromises = [];
   
           if (showAllSegments && currentImage.masks) {
-            currentImage.masks.forEach((maskData, index) => {
-              const isSelected = index === selectedMaskIndex;
-              maskDrawingPromises.push(drawMask(offscreenCtx, maskData.mask, maskData.color, offsetX, offsetY, width, height, zoom, pan, isSelected));
+            currentImage.masks.forEach(maskData => {
+              maskDrawingPromises.push(drawMask(offscreenCtx, maskData.mask, maskData.color, offsetX, offsetY, width, height, zoom, pan));
             });
           }
   
           if (currentMask) {
-            maskDrawingPromises.push(drawMask(offscreenCtx, currentMask, maskColor, offsetX, offsetY, width, height, zoom, pan, false));
+            maskDrawingPromises.push(drawMask(offscreenCtx, currentMask, maskColor, offsetX, offsetY, width, height, zoom, pan));
           }
   
           await Promise.all(maskDrawingPromises);
@@ -201,8 +191,7 @@ const SAMSegmentationUI = () => {
         };
       });
     }
-  }, [images, currentImageIndex, zoom, pan, showAllSegments, currentMask, maskColor, maskOpacity, points, selectedMaskIndex, fitImageToCanvas, drawMask]);
-  
+  }, [images, currentImageIndex, zoom, pan, showAllSegments, currentMask, maskColor, maskOpacity, points, fitImageToCanvas, drawMask]);
 
   const debouncedDrawCanvas = useCallback(
     debounce(() => drawCanvas(), 16),  // 60 fps
@@ -214,56 +203,34 @@ const SAMSegmentationUI = () => {
   }, [currentImageIndex, images, points, zoom, pan, maskColor, maskOpacity, showAllSegments, debouncedDrawCanvas]);
 
   const handleCanvasClick = (e) => {
-    const canvas = canvasRef.current;
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-  
-    const clickX = (e.clientX - rect.left) * scaleX;
-    const clickY = (e.clientY - rect.top) * scaleY;
-  
-    const { width, height, offsetX, offsetY } = fitImageToCanvas(images[currentImageIndex], canvas);
-  
-    const adjustedX = (clickX - pan.x) / zoom;
-    const adjustedY = (clickY - pan.y) / zoom;
-  
-    const normalizedX = (adjustedX - offsetX) / width;
-    const normalizedY = (adjustedY - offsetY) / height;
-  
-    if (normalizedX >= 0 && normalizedX <= 1 && normalizedY >= 0 && normalizedY <= 1) {
-      if (isSegmenting) {
+    if (e.button === 0 && images[currentImageIndex] && currentLabel && isSegmenting && segmentMode !== null) {
+      const canvas = canvasRef.current;
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+
+      const clickX = (e.clientX - rect.left) * scaleX;
+      const clickY = (e.clientY - rect.top) * scaleY;
+
+      const { width, height, offsetX, offsetY } = fitImageToCanvas(images[currentImageIndex], canvas);
+
+      const adjustedX = (clickX - pan.x) / zoom;
+      const adjustedY = (clickY - pan.y) / zoom;
+
+      const normalizedX = (adjustedX - offsetX) / width;
+      const normalizedY = (adjustedY - offsetY) / height;
+
+      if (normalizedX >= 0 && normalizedX <= 1 && normalizedY >= 0 && normalizedY <= 1) {
         const newPoint = { 
           normalizedX: normalizedX,
           normalizedY: normalizedY,
           type: segmentMode === 'add' ? 1 : 0
         };
         setPoints(prevPoints => [...prevPoints, newPoint]);
+        
         generateMask([...points, newPoint]);
-      } else {
-        // Check if a mask was clicked
-        const clickedMaskIndex = images[currentImageIndex].masks.findIndex(mask => 
-          isPointInMask(normalizedX, normalizedY, mask)
-        );
-  
-        if (clickedMaskIndex !== -1) {
-          setSelectedMaskIndex(clickedMaskIndex);
-          setIsEditingMask(true);
-          setPoints(images[currentImageIndex].masks[clickedMaskIndex].points);
-          setMaskColor(images[currentImageIndex].masks[clickedMaskIndex].color);
-          setCurrentLabel(labels[images[currentImageIndex].masks[clickedMaskIndex].label]);
-        } else {
-          setSelectedMaskIndex(null);
-          setIsEditingMask(false);
-        }
       }
     }
-  };
-  
-  // Helper function to check if a point is inside a mask
-  const isPointInMask = (x, y, mask) => {
-    // This is a placeholder. You'll need to implement this based on how your masks are stored.
-    // It might involve checking against the mask's binary data or using a more sophisticated algorithm.
-    return false;
   };
 
   const generateMask = async (currentPoints) => {
@@ -520,230 +487,143 @@ const initializeSAM = async (image) => {
       setCurrentMask(null);
     }
   };
-
-  const updateSelectedMask = (property, value) => {
-    setImages(prevImages => {
-      const newImages = [...prevImages];
-      const newMasks = [...newImages[currentImageIndex].masks];
-      newMasks[selectedMaskIndex] = {
-        ...newMasks[selectedMaskIndex],
-        [property]: value
-      };
-      newImages[currentImageIndex] = {
-        ...newImages[currentImageIndex],
-        masks: newMasks
-      };
-      return newImages;
-    });
-  };
-  
-  const deleteMask = () => {
-    setImages(prevImages => {
-      const newImages = [...prevImages];
-      const newMasks = newImages[currentImageIndex].masks.filter((_, index) => index !== selectedMaskIndex);
-      newImages[currentImageIndex] = {
-        ...newImages[currentImageIndex],
-        masks: newMasks
-      };
-      return newImages;
-    });
-    setSelectedMaskIndex(null);
-    setIsEditingMask(false);
-  };
-
-  const cancelMaskGeneration = () => {
-    setIsSegmenting(false);
-    setSegmentMode(null);
-    setPoints([]);
-    setCurrentMask(null);
-  };
-  
-  // Add this button to your UI
-  {isSegmenting && (
-    <Button onClick={cancelMaskGeneration} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
-      Cancel Mask
-    </Button>
-  )}
   
   return (
-<div className="flex h-screen w-screen overflow-hidden bg-gray-900 text-white">
-    {/* Sidebar */}
-    <div className="w-64 h-full bg-gray-800 shadow-lg p-4 flex flex-col space-y-4 overflow-y-auto">
-      <Select 
-        value={currentLabel} 
-        onValueChange={setCurrentLabel}
-        disabled={labels.length === 0}
-      >
-        <SelectTrigger className="w-full bg-gray-700 text-white border-blue-500">
-          <SelectValue placeholder="Select a label" />
-        </SelectTrigger>
-        <SelectContent className="bg-gray-700 text-white">
-          {labels.map((label, index) => (
-            <SelectItem 
-              key={index} 
-              value={label}
-              className="text-white hover:bg-gray-600"
-            >
-              {label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+    <div className="flex h-screen w-screen overflow-hidden bg-gray-900 text-white">
+      {/* Sidebar */}
+      <div className="w-64 h-full bg-gray-800 shadow-lg p-4 flex flex-col space-y-4 overflow-y-auto">
+        <Input
+          value={projectName}
+          onChange={(e) => setProjectName(e.target.value)}
+          placeholder="Enter project name"
+          className="bg-gray-700 text-white border-blue-500"
+        />
 
-      <Input
-        value={currentLabel}
-        onChange={(e) => setCurrentLabel(e.target.value)}
-        placeholder="Enter new label"
-        className="bg-gray-700 text-white border-blue-500"
-      />
+        <Select 
+          value={currentLabel} 
+          onValueChange={setCurrentLabel}
+          disabled={labels.length === 0}
+        >
+          <SelectTrigger className="w-full bg-gray-700 text-white border-blue-500">
+            <SelectValue placeholder="Select a label" />
+          </SelectTrigger>
+          <SelectContent className="bg-gray-700 text-white">
+            {labels.map((label, index) => (
+              <SelectItem 
+                key={index} 
+                value={label}
+                className="text-white hover:bg-gray-600"
+              >
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
-      <Button onClick={handleNewLabel} disabled={!currentLabel.trim()} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
-        <Plus className="mr-2 h-4 w-4" /> Add Label
-      </Button>
+        <Input
+          value={currentLabel}
+          onChange={(e) => setCurrentLabel(e.target.value)}
+          placeholder="Enter new label"
+          className="bg-gray-700 text-white border-blue-500"
+        />
 
-      <Button onClick={handleNewSegment} disabled={!currentLabel || isSegmenting} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
-        <Plus className="mr-2 h-4 w-4" /> New Segment
-      </Button>
-
-      <Button onClick={() => setSegmentMode('add')} disabled={!isSegmenting} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
-        Add Regions
-      </Button>
-
-      <Button onClick={() => setSegmentMode('remove')} disabled={!isSegmenting} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
-        Remove Regions
-      </Button>
-
-      <Button onClick={handleSaveSegment} disabled={!isSegmenting || points.length === 0} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
-        <Save className="mr-2 h-4 w-4" /> Save Segment
-      </Button>
-
-      {isSegmenting && (
-        <Button onClick={cancelMaskGeneration} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
-          Cancel Mask
+        <Button onClick={handleNewLabel} disabled={!currentLabel.trim()} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
+          <Plus className="mr-2 h-4 w-4" /> Add Label
         </Button>
-      )}
 
-      <Button onClick={() => fileInputRef.current.click()} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
-        <Upload className="mr-2 h-4 w-4" /> Load Images
-      </Button>
+        <Button onClick={handleNewSegment} disabled={!currentLabel || isSegmenting} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
+          <Plus className="mr-2 h-4 w-4" /> New Segment
+        </Button>
 
-      <input
-        type="file"
-        ref={fileInputRef}
-        onChange={handleFileChange}
-        accept="image/*"
-        multiple
-        className="hidden"
-      />
+        <Button onClick={() => setSegmentMode('add')} disabled={!isSegmenting} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
+          Add Regions
+        </Button>
 
-      <Button onClick={toggleSegmentsVisibility} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
-        {showAllSegments ? <EyeOff className="mr-2 h-4 w-4" /> : <Eye className="mr-2 h-4 w-4" />}
-        {showAllSegments ? 'Hide Segments' : 'Show Segments'}
-      </Button>
+        <Button onClick={() => setSegmentMode('remove')} disabled={!isSegmenting} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
+          Remove Regions
+        </Button>
 
-      <div className="flex items-center space-x-2">
+        <Button onClick={handleSaveSegment} disabled={!isSegmenting || points.length === 0} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
+          <Save className="mr-2 h-4 w-4" /> Save Segment
+        </Button>
+
+        <Button onClick={() => fileInputRef.current.click()} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
+          <Upload className="mr-2 h-4 w-4" /> Load Images
+        </Button>
+
         <input
-          type="color"
-          value={maskColor}
-          onChange={(e) => setMaskColor(e.target.value)}
-          className="w-8 h-8 bg-gray-700 border border-blue-500"
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileChange}
+          accept="image/*"
+          multiple
+          className="hidden"
         />
-        <Button onClick={generateRandomColor} className="text-xs bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
-          Random Color
+
+        <Button onClick={toggleSegmentsVisibility} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
+          {showAllSegments ? <EyeOff className="mr-2 h-4 w-4" /> : <Eye className="mr-2 h-4 w-4" />}
+          {showAllSegments ? 'Hide Segments' : 'Show Segments'}
         </Button>
-      </div>
 
-      <div className="flex flex-col space-y-2">
-        <span className="text-sm">Mask Opacity:</span>
-        <Slider
-          value={[maskOpacity]}
-          onValueChange={([value]) => setMaskOpacity(value)}
-          min={0}
-          max={1}
-          step={0.01}
-          className="w-full"
-        />
-      </div>
-
-      {isLoading && <span className="text-white">Generating mask...</span>}
-    </div>
-
-    {/* Main Content Area */}
-    <div className="flex-1 flex flex-col bg-gray-900 relative">
-      {/* Navigation Controls */}
-      <div className="flex justify-between items-center p-4">
-        <Button onClick={handlePrevImage} disabled={currentImageIndex === 0} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
-          <ChevronLeft className="mr-2 h-4 w-4" /> Previous Image
-        </Button>
-        <span className="text-lg font-semibold text-white">
-          Image {currentImageIndex + 1} of {images.length}
-        </span>
-        <Button onClick={handleNextImage} disabled={currentImageIndex === images.length - 1} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
-          Next Image <ChevronRight className="ml-2 h-4 w-4" />
-        </Button>
-      </div>
-
-      {/* Canvas */}
-      <div className="flex-1 flex items-center justify-center p-4">
-        <canvas
-          ref={canvasRef}
-          width={800}
-          height={600}
-          onClick={handleCanvasClick}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseLeave}
-          onWheel={handleWheel}
-          className="border border-gray-600 bg-black max-w-full max-h-full"
-        />
-      </div>
-
-      {/* Mask Editing UI */}
-      {isEditingMask && (
-        <div className="absolute top-4 right-4 bg-gray-800 p-4 rounded-lg">
-          <h3 className="text-lg font-semibold mb-2">Edit Mask</h3>
-          <Select 
-            value={currentLabel} 
-            onValueChange={(value) => {
-              setCurrentLabel(value);
-              updateSelectedMask('label', labels.indexOf(value));
-            }}
-          >
-            <SelectTrigger className="w-full bg-gray-700 text-white border-blue-500">
-              <SelectValue placeholder="Select a label" />
-            </SelectTrigger>
-            <SelectContent className="bg-gray-700 text-white">
-              {labels.map((label, index) => (
-                <SelectItem 
-                  key={index} 
-                  value={label}
-                  className="text-white hover:bg-gray-600"
-                >
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="flex items-center space-x-2">
           <input
             type="color"
             value={maskColor}
-            onChange={(e) => {
-              setMaskColor(e.target.value);
-              updateSelectedMask('color', e.target.value);
-            }}
-            className="mt-2 w-full h-8 bg-gray-700 border border-blue-500"
+            onChange={(e) => setMaskColor(e.target.value)}
+            className="w-8 h-8 bg-gray-700 border border-blue-500"
           />
-          <Button onClick={deleteMask} className="mt-2 w-full bg-red-600 hover:bg-red-700">
-            Delete Mask
-          </Button>
-          <Button onClick={() => setIsEditingMask(false)} className="mt-2 w-full">
-            Done Editing
+          <Button onClick={generateRandomColor} className="text-xs bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
+            Random Color
           </Button>
         </div>
-      )}
+
+        <div className="flex flex-col space-y-2">
+          <span className="text-sm">Mask Opacity:</span>
+          <Slider
+            value={[maskOpacity]}
+            onValueChange={([value]) => setMaskOpacity(value)}
+            min={0}
+            max={1}
+            step={0.01}
+            className="w-full"
+          />
+        </div>
+
+        {isLoading && <span className="text-white">Generating mask...</span>}
+      </div>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col bg-gray-900">
+        {/* Navigation Controls */}
+        <div className="flex justify-between items-center p-4">
+          <Button onClick={handlePrevImage} disabled={currentImageIndex === 0} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
+            <ChevronLeft className="mr-2 h-4 w-4" /> Previous Image
+          </Button>
+          <span className="text-lg font-semibold text-white">
+            Image {currentImageIndex + 1} of {images.length}
+          </span>
+          <Button onClick={handleNextImage} disabled={currentImageIndex === images.length - 1} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
+            Next Image <ChevronRight className="ml-2 h-4 w-4" />
+          </Button>
+        </div>
+
+        {/* Canvas */}
+        <div className="flex-1 flex items-center justify-center p-4">
+          <canvas
+            ref={canvasRef}
+            width={800}
+            height={600}
+            onClick={handleCanvasClick}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseLeave}
+            onWheel={handleWheel}
+            className="border border-gray-600 bg-black max-w-full max-h-full"
+          />
+        </div>
+      </div>
     </div>
-  </div>
   );
 };
 
