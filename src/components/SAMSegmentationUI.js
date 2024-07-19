@@ -307,7 +307,7 @@ const SAMSegmentationUI = () => {
         const data = await response.json();
         console.log("Received mask data:", data);
         
-        setCurrentMask(data.mask);
+        setCurrentMask(data);
   
         // Force a redraw of the canvas
         await drawCanvas();
