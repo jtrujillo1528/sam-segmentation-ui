@@ -33,6 +33,7 @@ const SAMSegmentationUI = () => {
   const [selectedMaskIndex, setSelectedMaskIndex] = useState(null);
   const [editingLabel, setEditingLabel] = useState('');
   const [newLabelInput, setNewLabelInput] = useState('');
+  const [editingPoints, setEditingPoints] = useState([]);
   
 
   const canvasRef = useRef(null);
@@ -220,6 +221,7 @@ const SAMSegmentationUI = () => {
     // Helper function to check if a point is inside a mask
     const isPointInMask = (x, y, mask) => {
       return new Promise((resolve) => {
+        //this is bullshit, fix 
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
@@ -261,7 +263,7 @@ const SAMSegmentationUI = () => {
       const normalizedY = (adjustedY - offsetY) / height;
     
       if (normalizedX >= 0 && normalizedX <= 1 && normalizedY >= 0 && normalizedY <= 1) {
-        if (isSegmenting || isEditingMask) {
+        if (isSegmenting) {
           const newPoint = { 
             normalizedX: normalizedX,
             normalizedY: normalizedY,
@@ -269,6 +271,14 @@ const SAMSegmentationUI = () => {
           };
           setPoints(prevPoints => [...prevPoints, newPoint]);
           generateMask([...points, newPoint]);
+        } else if (isEditingMask) {
+          const newPoint = { 
+            normalizedX: normalizedX,
+            normalizedY: normalizedY,
+            type: segmentMode === 'add' ? 1 : 0
+          };
+          setEditingPoints(prevPoints => [...prevPoints, newPoint]);
+          generateMask([...editingPoints, newPoint], true);
         } else {
           // Check if a mask was clicked
           let clickedMaskIndex = null;
@@ -297,15 +307,16 @@ const SAMSegmentationUI = () => {
       if (selectedMaskIndex !== null) {
         const selectedMask = images[currentImageIndex].masks[selectedMaskIndex];
         setIsEditingMask(true);
-        setPoints(selectedMask.points);
+        setEditingPoints(selectedMask.points);
         setCurrentMask(selectedMask.mask);
         setCurrentLabel(labels[selectedMask.label]);
         setMaskColor(selectedMask.color);
         setSegmentMode('add'); // Default to 'add' mode when starting to edit
       }
     };
+  
 
-    const generateMask = async (currentPoints) => {
+    const generateMask = async (currentPoints, isEditing = false) => {
       if (images[currentImageIndex] && currentPoints.length > 0) {
         setIsLoading(true);
         const formData = new FormData();
@@ -344,6 +355,12 @@ const SAMSegmentationUI = () => {
     
           const data = await response.json();
           setCurrentMask(data);
+    
+          if (isEditing) {
+            setEditingPoints(currentPoints);
+          } else {
+            setPoints(currentPoints);
+          }
     
           // Force a redraw of the canvas
           drawCanvas();
@@ -467,6 +484,7 @@ const SAMSegmentationUI = () => {
     setSegmentMode(null);
     setPoints([]);
     setCurrentMask(null);
+    setSegmentMode('add'); // Default to 'add' mode when starting to edit
     if (images[currentImageIndex] && images[currentImageIndex].masks.length === 0) {
       initializeSAM(images[currentImageIndex]);
     }
@@ -565,7 +583,7 @@ const initializeSAM = async (image) => {
       const newMasks = [...newImages[currentImageIndex].masks];
       newMasks[selectedMaskIndex] = {
         ...newMasks[selectedMaskIndex],
-        points: points,
+        points: editingPoints,
         mask: currentMask,
         color: maskColor,
         label: labels.indexOf(currentLabel)
@@ -577,7 +595,6 @@ const initializeSAM = async (image) => {
       return newImages;
     });
   };
-
 
   const deleteMask = () => {
     setImages(prevImages => {
@@ -600,14 +617,14 @@ const initializeSAM = async (image) => {
   const saveMaskEdits = () => {
     updateSelectedMask();
     setIsEditingMask(false);
-    setPoints([]);
+    setEditingPoints([]);
     setCurrentMask(null);
-    setCurrentMask(null);
+    setSelectedMaskIndex(null);
   };
   
   const cancelMaskEdits = () => {
     setIsEditingMask(false);
-    setPoints([]);
+    setEditingPoints([]);
     setCurrentMask(null);
     setSelectedMaskIndex(null)
   };
@@ -679,7 +696,7 @@ const initializeSAM = async (image) => {
   
             <Button 
               onClick={isEditingMask ? saveMaskEdits : handleSaveSegment} 
-              disabled={points.length === 0} 
+              disabled={(isEditingMask ? editingPoints : points).length === 0} 
               className="bg-green-600 hover:bg-green-700 text-white"
             >
               <Save className="mr-2 h-4 w-4" /> Save {isEditingMask ? 'Edits' : 'Segment'}
