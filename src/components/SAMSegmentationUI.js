@@ -242,6 +242,7 @@ const SAMSegmentationUI = () => {
       });
     };
 
+
     const handleCanvasClick = async (e) => {
       const canvas = canvasRef.current;
       const rect = canvas.getBoundingClientRect();
@@ -270,14 +271,22 @@ const SAMSegmentationUI = () => {
           generateMask([...points, newPoint]);
         } else {
           // Check if a mask was clicked
+          let clickedMaskIndex = null;
           for (let i = images[currentImageIndex].masks.length - 1; i >= 0; i--) {
             const mask = images[currentImageIndex].masks[i];
             if (await isPointInMask(normalizedX, normalizedY, mask.mask)) {
-              setSelectedMaskIndex(i);
-              setMaskColor(mask.color);
-              setCurrentLabel(labels[mask.label]);
+              clickedMaskIndex = i;
               break;
             }
+          }
+          
+          if (clickedMaskIndex !== null) {
+            const clickedMask = images[currentImageIndex].masks[clickedMaskIndex];
+            setSelectedMaskIndex(clickedMaskIndex);
+            setMaskColor(clickedMask.color);
+            setCurrentLabel(labels[clickedMask.label]);
+          } else {
+            setSelectedMaskIndex(null);
           }
         }
       }
@@ -291,62 +300,61 @@ const SAMSegmentationUI = () => {
         setPoints(selectedMask.points);
         setCurrentMask(selectedMask.mask);
         setCurrentLabel(labels[selectedMask.label]);
+        setMaskColor(selectedMask.color);
+        setSegmentMode('add'); // Default to 'add' mode when starting to edit
       }
     };
 
-  const generateMask = async (currentPoints) => {
-    if (images[currentImageIndex] && currentPoints.length > 0) {
-      setIsLoading(true);
-      const formData = new FormData();
-  
-      const imageWidth = images[currentImageIndex].width;
-      const imageHeight = images[currentImageIndex].height;
-  
-      // Convert base64 to Blob
-      const base64Data = images[currentImageIndex].image;
-      const byteCharacters = atob(base64Data);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], {type: 'image/png'});
-  
-      formData.append('file', blob, 'image.png');
-      formData.append('points', JSON.stringify(currentPoints.map(p => [
-        Math.round(p.normalizedX * imageWidth),
-        Math.round(p.normalizedY * imageHeight)
-      ])));
-      formData.append('labels', JSON.stringify(currentPoints.map(p => p.type)));
-  
-      try {
-        const response = await fetch('http://localhost:8000/predict', {
-          method: 'POST',
-          body: formData,
-          mode: 'cors',
-          credentials: 'include',
-        });
-  
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+    const generateMask = async (currentPoints) => {
+      if (images[currentImageIndex] && currentPoints.length > 0) {
+        setIsLoading(true);
+        const formData = new FormData();
+    
+        const imageWidth = images[currentImageIndex].width;
+        const imageHeight = images[currentImageIndex].height;
+    
+        // Convert base64 to Blob
+        const base64Data = images[currentImageIndex].image;
+        const byteCharacters = atob(base64Data);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
         }
-  
-        const data = await response.json();
-        console.log("Received mask data:", data);
-        
-        setCurrentMask(data);
-  
-        // Force a redraw of the canvas
-        await drawCanvas();
-      } catch (error) {
-        console.error('Error generating mask:', error);
-      } finally {
-        setIsLoading(false);
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], {type: 'image/png'});
+    
+        formData.append('file', blob, 'image.png');
+        formData.append('points', JSON.stringify(currentPoints.map(p => [
+          Math.round(p.normalizedX * imageWidth),
+          Math.round(p.normalizedY * imageHeight)
+        ])));
+        formData.append('labels', JSON.stringify(currentPoints.map(p => p.type)));
+    
+        try {
+          const response = await fetch('http://localhost:8000/predict', {
+            method: 'POST',
+            body: formData,
+            mode: 'cors',
+            credentials: 'include',
+          });
+    
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+    
+          const data = await response.json();
+          setCurrentMask(data);
+    
+          // Force a redraw of the canvas
+          drawCanvas();
+        } catch (error) {
+          console.error('Error generating mask:', error);
+        } finally {
+          setIsLoading(false);
+        }
       }
-    }
-  };
+    };
   
-
   const handleWheel = useCallback((e) => {
     //e.preventDefault();
     const rect = canvasRef.current.getBoundingClientRect();
@@ -569,7 +577,6 @@ const initializeSAM = async (image) => {
       return newImages;
     });
   };
-  
 
 
   const deleteMask = () => {
@@ -589,26 +596,20 @@ const initializeSAM = async (image) => {
   };
 
 
+
   const saveMaskEdits = () => {
     updateSelectedMask();
     setIsEditingMask(false);
     setPoints([]);
     setCurrentMask(null);
-    setSelectedMaskIndex(null);
+    setCurrentMask(null);
   };
   
   const cancelMaskEdits = () => {
     setIsEditingMask(false);
     setPoints([]);
     setCurrentMask(null);
-    setSelectedMaskIndex(null);
-    setEditingLabel('');
-  };
-
-  const handleNewLabelDuringEdit = () => {
-    if (editingLabel && editingLabel.trim() !== '' && !labels.includes(editingLabel)) {
-      setLabels(prevLabels => [...prevLabels, editingLabel]);
-    }
+    setSelectedMaskIndex(null)
   };
 
   const cancelMaskGeneration = () => {
@@ -642,40 +643,40 @@ const initializeSAM = async (image) => {
             ))}
           </SelectContent>
         </Select>
-
+  
         <Input
           value={newLabelInput}
           onChange={(e) => setNewLabelInput(e.target.value)}
           placeholder="Enter new label"
           className="bg-gray-700 text-white border-blue-500"
         />
-
+  
         <Button onClick={handleNewLabel} disabled={!newLabelInput.trim()} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
           <Plus className="mr-2 h-4 w-4" /> Add Label
         </Button>
-
+  
         {!isSegmenting && !isEditingMask && (
           <Button onClick={handleNewSegment} disabled={!currentLabel} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
             <Plus className="mr-2 h-4 w-4" /> New Segment
           </Button>
         )}
-
+  
         {!isSegmenting && !isEditingMask && selectedMaskIndex !== null && (
           <Button onClick={startEditingMask} className="bg-blue-600 hover:bg-blue-700 text-white">
             <Edit className="mr-2 h-4 w-4" /> Edit Selected Mask
           </Button>
         )}
-
+  
         {(isSegmenting || isEditingMask) && (
           <>
             <Button onClick={() => setSegmentMode('add')} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
               Add Regions
             </Button>
-
+  
             <Button onClick={() => setSegmentMode('remove')} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
               Remove Regions
             </Button>
-
+  
             <Button 
               onClick={isEditingMask ? saveMaskEdits : handleSaveSegment} 
               disabled={points.length === 0} 
@@ -683,7 +684,7 @@ const initializeSAM = async (image) => {
             >
               <Save className="mr-2 h-4 w-4" /> Save {isEditingMask ? 'Edits' : 'Segment'}
             </Button>
-
+  
             <Button 
               onClick={isEditingMask ? cancelMaskEdits : cancelMaskGeneration} 
               className="bg-red-600 hover:bg-red-700 text-white"
@@ -692,11 +693,11 @@ const initializeSAM = async (image) => {
             </Button>
           </>
         )}
-
+  
         <Button onClick={() => fileInputRef.current.click()} disabled={isSegmenting || isEditingMask} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
           <Upload className="mr-2 h-4 w-4" /> Load Images
         </Button>
-
+  
         <input
           type="file"
           ref={fileInputRef}
@@ -705,12 +706,12 @@ const initializeSAM = async (image) => {
           multiple
           className="hidden"
         />
-
+  
         <Button onClick={toggleSegmentsVisibility} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
           {showAllSegments ? <EyeOff className="mr-2 h-4 w-4" /> : <Eye className="mr-2 h-4 w-4" />}
           {showAllSegments ? 'Hide Segments' : 'Show Segments'}
         </Button>
-
+  
         <div className="flex items-center space-x-2">
           <input
             type="color"
@@ -722,7 +723,7 @@ const initializeSAM = async (image) => {
             Random Color
           </Button>
         </div>
-
+  
         <div className="flex flex-col space-y-2">
           <span className="text-sm">Mask Opacity:</span>
           <Slider
@@ -734,10 +735,10 @@ const initializeSAM = async (image) => {
             className="w-full"
           />
         </div>
-
+  
         {isLoading && <span className="text-white">Generating mask...</span>}
       </div>
-
+  
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col bg-gray-900 relative">
         {/* Navigation Controls */}
@@ -752,7 +753,7 @@ const initializeSAM = async (image) => {
             Next Image <ChevronRight className="ml-2 h-4 w-4" />
           </Button>
         </div>
-
+  
         {/* Canvas */}
         <div className="flex-1 flex items-center justify-center p-4">
           <canvas
