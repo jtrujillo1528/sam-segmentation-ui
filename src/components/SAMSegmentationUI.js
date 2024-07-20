@@ -218,31 +218,38 @@ const SAMSegmentationUI = () => {
     debouncedDrawCanvas();
   }, [currentImageIndex, images, points, zoom, pan, maskColor, maskOpacity, showAllSegments, debouncedDrawCanvas]);
 
-    // Helper function to check if a point is inside a mask
-    const isPointInMask = (x, y, mask) => {
-      return new Promise((resolve) => {
-        //this is bullshit, fix 
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          canvas.width = img.width;
-          canvas.height = img.height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0);
-          
-          const pixelData = ctx.getImageData(
-            Math.floor(x * img.width),
-            Math.floor(y * img.height),
-            1,
-            1
-          ).data;
-          
-          // If the alpha value is greater than 0, the point is inside the mask
-          resolve(pixelData[3] > 0);
-        };
-        img.src = `data:image/png;base64,${mask}`;
-      });
-    };
+  const isPointInMask = async (x, y, image) => {
+    if (image && image.masks && image.masks.length > 0) {
+      setIsLoading(true);
+      const formData = new FormData();
+  
+      // Send only the base64 string of each mask
+      formData.append('masks', JSON.stringify(image.masks.map(mask => mask.mask)));
+      formData.append('point', JSON.stringify([x, y]));
+      formData.append('dims', JSON.stringify([image.width, image.height]));
+  
+      try {
+        const response = await fetch('http://localhost:8000/get_point', {
+          method: 'POST',
+          body: formData,
+          mode: 'cors',
+          credentials: 'include',
+        });
+  
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+  
+        const selection = await response.json();
+        setIsLoading(false);
+        return selection;
+      } catch (error) {
+        console.error('Error checking point in mask:', error);
+        setIsLoading(false);
+      }
+    }
+    return null;
+  };
 
 
     const handleCanvasClick = async (e) => {
@@ -281,14 +288,7 @@ const SAMSegmentationUI = () => {
           generateMask([...editingPoints, newPoint], true);
         } else {
           // Check if a mask was clicked
-          let clickedMaskIndex = null;
-          for (let i = images[currentImageIndex].masks.length - 1; i >= 0; i--) {
-            const mask = images[currentImageIndex].masks[i];
-            if (await isPointInMask(normalizedX, normalizedY, mask.mask)) {
-              clickedMaskIndex = i;
-              break;
-            }
-          }
+          const clickedMaskIndex = await isPointInMask(normalizedX, normalizedY, images[currentImageIndex]);
           
           if (clickedMaskIndex !== null) {
             const clickedMask = images[currentImageIndex].masks[clickedMaskIndex];
@@ -301,6 +301,7 @@ const SAMSegmentationUI = () => {
         }
       }
     };
+    
   
 
     const startEditingMask = () => {
