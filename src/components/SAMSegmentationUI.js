@@ -8,7 +8,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Slider } from "./ui/slider";
 import { debounce } from 'lodash';  // Make sure to install and import lodash
 
-
+//figure out how to display masks being selected by highlighting its edges
+//figure out how to save mask and image data to the back end
 
 const SAMSegmentationUI = () => {
   const [projectName, setProjectName] = useState('');
@@ -34,6 +35,7 @@ const SAMSegmentationUI = () => {
   const [editingLabel, setEditingLabel] = useState('');
   const [newLabelInput, setNewLabelInput] = useState('');
   const [editingPoints, setEditingPoints] = useState([]);
+  const [selectedMaskEdges, setSelectedMaskEdges] = useState(null);
   
 
   const canvasRef = useRef(null);
@@ -205,7 +207,21 @@ const SAMSegmentationUI = () => {
         };
       });
     }
-  }, [images, currentImageIndex, zoom, pan, showAllSegments, currentMask, maskColor, maskOpacity, points, selectedMaskIndex, fitImageToCanvas, drawMask]);
+    if (selectedMaskEdges) {
+      const edgesImg = new Image();
+      edgesImg.onload = () => {
+        ctx.save();
+        ctx.translate(pan.x, pan.y);
+        ctx.scale(zoom, zoom);
+        ctx.globalAlpha = 0.8;
+        ctx.strokeStyle = 'blue';
+        ctx.lineWidth = 2 / zoom;
+        ctx.drawImage(edgesImg, offsetX, offsetY, width, height);
+        ctx.restore();
+      };
+      edgesImg.src = `data:image/png;base64,${selectedMaskEdges}`;
+    }
+  }, [images, currentImageIndex, zoom, pan, showAllSegments, currentMask, maskColor, maskOpacity, points, selectedMaskIndex, selectedMaskEdges]);
   
 
 
@@ -217,6 +233,34 @@ const SAMSegmentationUI = () => {
   useEffect(() => {
     debouncedDrawCanvas();
   }, [currentImageIndex, images, points, zoom, pan, maskColor, maskOpacity, showAllSegments, debouncedDrawCanvas]);
+
+  const fetchMaskData = async (maskIndex) => {
+    setIsLoading(true);
+    const formData = new FormData();
+    formData.append('mask_index', maskIndex);
+    formData.append('image_index', currentImageIndex);
+
+    try {
+      const response = await fetch('http://localhost:8000/get_mask_data', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setSelectedMaskEdges(data.edges);
+      setMaskColor(data.color);
+      setCurrentLabel(labels[data.label]);
+    } catch (error) {
+      console.error('Error fetching mask data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
 
   const isPointInMask = async (x, y, image) => {
     if (image && image.masks && image.masks.length > 0) {
@@ -291,14 +335,13 @@ const SAMSegmentationUI = () => {
           const clickedMaskIndex = await isPointInMask(normalizedX, normalizedY, images[currentImageIndex]);
           
           if (clickedMaskIndex !== null) {
-            const clickedMask = images[currentImageIndex].masks[clickedMaskIndex];
             setSelectedMaskIndex(clickedMaskIndex);
-            setMaskColor(clickedMask.color);
-            setCurrentLabel(labels[clickedMask.label]);
+            await fetchMaskData(clickedMaskIndex);
           } else {
             setSelectedMaskIndex(null);
+            setSelectedMaskEdges(null);
           }
-        }
+        };
       }
     };
     
