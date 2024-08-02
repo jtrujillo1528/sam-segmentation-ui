@@ -6,7 +6,7 @@ import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { Slider } from "./ui/slider";
-import { debounce } from 'lodash';  // Make sure to install and import lodash
+import { debounce } from 'lodash';
 
 //figure out how to display masks being selected by highlighting its edges
 //figure out how to save mask and image data to the back end
@@ -36,6 +36,7 @@ const SAMSegmentationUI = () => {
   const [newLabelInput, setNewLabelInput] = useState('');
   const [editingPoints, setEditingPoints] = useState([]);
   const [selectedMaskEdges, setSelectedMaskEdges] = useState(null);
+  const [currentFullSizeImage, setCurrentFullSizeImage] = useState(null);
   
 
   const canvasRef = useRef(null);
@@ -64,6 +65,74 @@ const SAMSegmentationUI = () => {
     };
     updateCanvas();
   }, [currentImageIndex, images, points, zoom, pan, maskColor, maskOpacity, showAllSegments]);
+
+  useEffect(() => {
+    fetchImages();
+  }, []);
+
+  useEffect(() => {
+    if (images.length > 0) {
+      fetchFullSizeImage(images[currentImageIndex].id);
+    }
+  }, [currentImageIndex, images]);
+
+  const fetchImages = async () => {
+    try {
+      const response = await fetch('http://localhost:8000/get_images');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      // Initialize masks for each image
+      const imagesWithMasks = data.images.map(img => ({ ...img, masks: [] }));
+      setImages(imagesWithMasks);
+      setCurrentImageIndex(0);
+    } catch (error) {
+      console.error("Error fetching images:", error);
+    }
+  };
+
+  const fetchFullSizeImage = async (imageId) => {
+    try {
+      const response = await fetch(`http://localhost:8000/get_image/${imageId}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      setCurrentFullSizeImage(data.image);
+    } catch (error) {
+      console.error("Error fetching full-size image:", error);
+    }
+  };
+
+  const handleFileChange = async (e) => {
+    const files = Array.from(e.target.files);
+    const imageFiles = files.filter(file => file.type.startsWith('image/'));
+    
+    for (const file of imageFiles) {
+      const formData = new FormData();
+      formData.append('file', file);
+  
+      try {
+        const response = await fetch('http://localhost:8000/upload_image', {
+          method: 'POST',
+          body: formData,
+        });
+  
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+  
+        const result = await response.json();
+        console.log(`Image uploaded successfully. ID: ${result.image_id}`);
+      } catch (error) {
+        console.error("Error uploading image:", error);
+      }
+    }
+  
+    // After uploading all images, fetch the updated image list
+    await fetchImages();
+  };
 
 
 
@@ -141,72 +210,67 @@ const SAMSegmentationUI = () => {
   
   const drawCanvas = useCallback(async () => {
     const canvas = canvasRef.current;
-    if (!canvas || images.length === 0) return;
+    if (!canvas || !currentFullSizeImage) return;
   
     const ctx = canvas.getContext('2d');
     
-    // Create an off-screen canvas for double buffering
     const offscreenCanvas = document.createElement('canvas');
     offscreenCanvas.width = canvas.width;
     offscreenCanvas.height = canvas.height;
     const offscreenCtx = offscreenCanvas.getContext('2d');
   
-    const currentImage = images[currentImageIndex];
-    if (currentImage) {
-      const img = new Image();
-      img.src = `data:image/png;base64,${currentImage.image}`;
-      
-      await new Promise((resolve) => {
-        img.onload = async () => {
-          const { width, height, offsetX, offsetY } = fitImageToCanvas(img, canvas);
+    const img = new Image();
+    img.src = `data:image/png;base64,${currentFullSizeImage}`;
+    
+    await new Promise((resolve) => {
+      img.onload = async () => {
+        const { width, height, offsetX, offsetY } = fitImageToCanvas(img, canvas);
   
-          offscreenCtx.save();
-          offscreenCtx.translate(pan.x, pan.y);
-          offscreenCtx.scale(zoom, zoom);
-          offscreenCtx.drawImage(img, offsetX, offsetY, width, height);
-          offscreenCtx.restore();
+        offscreenCtx.save();
+        offscreenCtx.translate(pan.x, pan.y);
+        offscreenCtx.scale(zoom, zoom);
+        offscreenCtx.drawImage(img, offsetX, offsetY, width, height);
+        offscreenCtx.restore();
   
-          const maskDrawingPromises = [];
+        const maskDrawingPromises = [];
   
-          if (showAllSegments && currentImage.masks) {
-            currentImage.masks.forEach((maskData, index) => {
-              const isSelected = index === selectedMaskIndex;
-              maskDrawingPromises.push(drawMask(offscreenCtx, maskData.mask, maskData.color, offsetX, offsetY, width, height, zoom, pan, isSelected));
-            });
-          }
-  
-          if (currentMask) {
-            maskDrawingPromises.push(drawMask(offscreenCtx, currentMask, maskColor, offsetX, offsetY, width, height, zoom, pan, false));
-          }
-  
-          await Promise.all(maskDrawingPromises);
-  
-          // Draw points
-          offscreenCtx.save();
-          offscreenCtx.translate(pan.x, pan.y);
-          offscreenCtx.scale(zoom, zoom);
-  
-          const pointRadius = 5 / zoom;
-          points.forEach((point) => {
-            const canvasX = offsetX + point.normalizedX * width;
-            const canvasY = offsetY + point.normalizedY * height;
-  
-            offscreenCtx.beginPath();
-            offscreenCtx.arc(canvasX, canvasY, pointRadius, 0, 2 * Math.PI);
-            offscreenCtx.fillStyle = point.type === 1 ? 'blue' : 'red';
-            offscreenCtx.fill();
+        if (showAllSegments && images[currentImageIndex] && images[currentImageIndex].masks) {
+          images[currentImageIndex].masks.forEach((maskData, index) => {
+            const isSelected = index === selectedMaskIndex;
+            maskDrawingPromises.push(drawMask(offscreenCtx, maskData.mask, maskData.color, offsetX, offsetY, width, height, zoom, pan, isSelected));
           });
+        }
   
-          offscreenCtx.restore();
+        if (currentMask) {
+          maskDrawingPromises.push(drawMask(offscreenCtx, currentMask, maskColor, offsetX, offsetY, width, height, zoom, pan, false));
+        }
   
-          // Copy the off-screen canvas to the main canvas in a single operation
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(offscreenCanvas, 0, 0);
+        await Promise.all(maskDrawingPromises);
   
-          resolve();
-        };
-      });
-    }
+        offscreenCtx.save();
+        offscreenCtx.translate(pan.x, pan.y);
+        offscreenCtx.scale(zoom, zoom);
+  
+        const pointRadius = 5 / zoom;
+        points.forEach((point) => {
+          const canvasX = offsetX + point.normalizedX * width;
+          const canvasY = offsetY + point.normalizedY * height;
+  
+          offscreenCtx.beginPath();
+          offscreenCtx.arc(canvasX, canvasY, pointRadius, 0, 2 * Math.PI);
+          offscreenCtx.fillStyle = point.type === 1 ? 'blue' : 'red';
+          offscreenCtx.fill();
+        });
+  
+        offscreenCtx.restore();
+  
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(offscreenCanvas, 0, 0);
+  
+        resolve();
+      };
+    });
+
     if (selectedMaskEdges) {
       const edgesImg = new Image();
       edgesImg.onload = () => {
@@ -221,7 +285,7 @@ const SAMSegmentationUI = () => {
       };
       edgesImg.src = `data:image/png;base64,${selectedMaskEdges}`;
     }
-  }, [images, currentImageIndex, zoom, pan, showAllSegments, currentMask, maskColor, maskOpacity, points, selectedMaskIndex, selectedMaskEdges]);
+  }, [currentFullSizeImage, zoom, pan, showAllSegments, currentMask, maskColor, maskOpacity, points, selectedMaskIndex, selectedMaskEdges]);
   
 
 
@@ -321,7 +385,7 @@ const SAMSegmentationUI = () => {
             type: segmentMode === 'add' ? 1 : 0
           };
           setPoints(prevPoints => [...prevPoints, newPoint]);
-          generateMask([...points, newPoint]);
+          generateMask(images[currentImageIndex], [...points, newPoint]);
         } else if (isEditingMask) {
           const newPoint = { 
             normalizedX: normalizedX,
@@ -329,7 +393,7 @@ const SAMSegmentationUI = () => {
             type: segmentMode === 'add' ? 1 : 0
           };
           setEditingPoints(prevPoints => [...prevPoints, newPoint]);
-          generateMask([...editingPoints, newPoint], true);
+          generateMask(images[currentImageIndex], [...editingPoints, newPoint], true);
         } else {
           // Check if a mask was clicked
           const clickedMaskIndex = await isPointInMask(normalizedX, normalizedY, images[currentImageIndex]);
@@ -360,28 +424,15 @@ const SAMSegmentationUI = () => {
     };
   
 
-    const generateMask = async (currentPoints, isEditing = false) => {
-      if (images[currentImageIndex] && currentPoints.length > 0) {
+    const generateMask = async (image, currentPoints, isEditing = false) => {
+      if (currentFullSizeImage && currentPoints.length > 0) {
         setIsLoading(true);
         const formData = new FormData();
     
-        const imageWidth = images[currentImageIndex].width;
-        const imageHeight = images[currentImageIndex].height;
-    
-        // Convert base64 to Blob
-        const base64Data = images[currentImageIndex].image;
-        const byteCharacters = atob(base64Data);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], {type: 'image/png'});
-    
-        formData.append('file', blob, 'image.png');
+        formData.append('image_id', image.id);
         formData.append('points', JSON.stringify(currentPoints.map(p => [
-          Math.round(p.normalizedX * imageWidth),
-          Math.round(p.normalizedY * imageHeight)
+          Math.round(p.normalizedX * images[currentImageIndex].width),
+          Math.round(p.normalizedY * images[currentImageIndex].height)
         ])));
         formData.append('labels', JSON.stringify(currentPoints.map(p => p.type)));
     
@@ -483,38 +534,6 @@ const SAMSegmentationUI = () => {
     setIsPanning(false);
   };
 
-  const handleFileChange = (e) => {
-    const files = Array.from(e.target.files);
-    const imageFiles = files.filter(file => file.type.startsWith('image/'));
-    
-    Promise.all(imageFiles.map(file => {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const img = new Image();
-          img.onload = () => resolve({
-            image: e.target.result.split(',')[1],
-            width: img.width,
-            height: img.height,
-            masks: []
-          });
-          img.onerror = reject;
-          img.src = e.target.result;
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-    })).then(loadedImages => {
-      setImages(loadedImages);
-      setCurrentImageIndex(0);
-      setZoom(1);
-      setPan({ x: 0, y: 0 });
-      setPoints([]);
-    }).catch(error => {
-      console.error("Error loading images:", error);
-    });
-  };
-
   const handleNewLabel = () => {
     if (newLabelInput && newLabelInput.trim() !== '' && !labels.includes(newLabelInput)) {
       setLabels(prevLabels => [...prevLabels, newLabelInput]);
@@ -529,7 +548,7 @@ const SAMSegmentationUI = () => {
     setPoints([]);
     setCurrentMask(null);
     setSegmentMode('add'); // Default to 'add' mode when starting to edit
-    if (images[currentImageIndex] && images[currentImageIndex].masks.length === 0) {
+    if (images[currentImageIndex] && (!images[currentImageIndex].masks || images[currentImageIndex].masks.length === 0)) {
       initializeSAM(images[currentImageIndex]);
     }
   };
@@ -539,66 +558,82 @@ const SAMSegmentationUI = () => {
     setMaskColor("#" + randomColor);
   };
 
-const initializeSAM = async (image) => {
-  const formData = new FormData();
-  
-  // Convert base64 to Blob
-  const base64Data = image.image;
-  const byteCharacters = atob(base64Data);
-  const byteNumbers = new Array(byteCharacters.length);
-  for (let i = 0; i < byteCharacters.length; i++) {
-    byteNumbers[i] = byteCharacters.charCodeAt(i);
-  }
-  const byteArray = new Uint8Array(byteNumbers);
-  const blob = new Blob([byteArray], {type: 'image/png'});
-
-  formData.append('file', blob, 'image.png');
-  formData.append('initialize', 'true');
-
-  try {
-    const response = await fetch('http://localhost:8000/initialize_sam', {
-      method: 'POST',
-      body: formData,
-      mode: 'cors',
-      credentials: 'include',
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+  const initializeSAM = async (image) => {
+    if (!image || !image.id) {
+      console.error('Invalid image object or missing image ID');
+      return;
     }
-
-    const data = await response.json();
-    console.log("SAM initialized for image:", data.message);
-  } catch (error) {
-    console.error('Error initializing SAM:', error);
-  }
-};
-
-
-  const handleSaveSegment = () => {
-    if (currentLabel && points.length > 0 && currentMask) {
-      const newMask = {
-        mask: currentMask,
-        color: maskColor,
-        label: labels.indexOf(currentLabel),
-        points: points
-      };
-
-      setImages(prevImages => {
-        const updatedImages = [...prevImages];
-        updatedImages[currentImageIndex] = {
-          ...updatedImages[currentImageIndex],
-          masks: [...updatedImages[currentImageIndex].masks, newMask]
-        };
-        return updatedImages;
+  
+    const formData = new FormData();
+    formData.append('image_id', image.id);
+  
+    try {
+      const response = await fetch('http://localhost:8000/initialize_sam', {
+        method: 'POST',
+        body: formData,
+        mode: 'cors',
+        credentials: 'include',
       });
-
-      setIsSegmenting(false);
-      setSegmentMode(null);
-      setPoints([]);
-      setCurrentMask(null);
+  
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+  
+      const data = await response.json();
+      console.log("SAM initialized for image:", data.message);
+    } catch (error) {
+      console.error('Error initializing SAM:', error);
     }
   };
+
+
+const handleSaveSegment = async () => {
+  if (currentLabel && points.length > 0 && currentMask) {
+    const maskData = {
+      label: currentLabel,
+      points: points,
+      pointLabels: points.map(p => p.type),
+      mask: currentMask,
+      image_id: images[currentImageIndex].id
+    };
+
+    try {
+      const response = await fetch('http://localhost:8000/save_mask', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(maskData),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      // Refresh the masks for the current image
+      const masksResponse = await fetch(`http://localhost:8000/get_masks/${images[currentImageIndex].id}`);
+      if (masksResponse.ok) {
+        const masksData = await masksResponse.json();
+        setImages(prevImages => {
+          const newImages = [...prevImages];
+          newImages[currentImageIndex] = {
+            ...newImages[currentImageIndex],
+            masks: masksData
+          };
+          return newImages;
+        });
+      }
+
+    } catch (error) {
+      console.error("Error saving mask:", error);
+    }
+
+    setIsSegmenting(false);
+    setSegmentMode(null);
+    setPoints([]);
+    setCurrentMask(null);
+  }
+};
 
   const handlePrevImage = () => {
     if (currentImageIndex > 0) {
