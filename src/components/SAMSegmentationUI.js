@@ -8,8 +8,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Slider } from "./ui/slider";
 import { debounce } from 'lodash';
 
-//figure out how to display masks being selected by highlighting its edges
-//figure out how to save mask and image data to the back end
+//to do list
+//figure out how to initiate SAM for image if moving backwards through images and editing
+//figure out how to allow for adding points to a mask while editing and how to delete a mask
+//add paint brush feature
+//add un-do feature for mask editing
+//integrate mongoDB database
+//allow for user log-in and project definition
 
 const SAMSegmentationUI = () => {
   const [projectName, setProjectName] = useState('');
@@ -208,11 +213,7 @@ const SAMSegmentationUI = () => {
     if (!canvas || !currentFullSizeImage) return;
   
     const ctx = canvas.getContext('2d');
-    
-    const offscreenCanvas = document.createElement('canvas');
-    offscreenCanvas.width = canvas.width;
-    offscreenCanvas.height = canvas.height;
-    const offscreenCtx = offscreenCanvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
   
     const img = new Image();
     img.src = `data:image/png;base64,${currentFullSizeImage}`;
@@ -221,46 +222,50 @@ const SAMSegmentationUI = () => {
       img.onload = async () => {
         const { width, height, offsetX, offsetY } = fitImageToCanvas(img, canvas);
   
-        offscreenCtx.save();
-        offscreenCtx.translate(pan.x, pan.y);
-        offscreenCtx.scale(zoom, zoom);
-        offscreenCtx.drawImage(img, offsetX, offsetY, width, height);
-        offscreenCtx.restore();
+        ctx.save();
+        ctx.translate(pan.x, pan.y);
+        ctx.scale(zoom, zoom);
+        ctx.drawImage(img, offsetX, offsetY, width, height);
+        ctx.restore();
   
         const maskDrawingPromises = [];
   
         if (showAllSegments && images[currentImageIndex] && images[currentImageIndex].masks) {
           images[currentImageIndex].masks.forEach((maskData, index) => {
-            const isSelected = index === selectedMaskIndex;
-            maskDrawingPromises.push(drawMask(offscreenCtx, maskData.mask, maskData.color, offsetX, offsetY, width, height, zoom, pan, isSelected));
+            // Skip drawing the mask if it's currently being edited
+            if (isEditingMask && index === selectedMaskIndex) {
+              return;
+            }
+            const isSelected = index === selectedMaskIndex && !isEditingMask;
+            maskDrawingPromises.push(drawMask(ctx, maskData.mask, maskData.color, offsetX, offsetY, width, height, zoom, pan, isSelected));
           });
         }
   
+        // Draw the current mask being edited or created
         if (currentMask) {
-          maskDrawingPromises.push(drawMask(offscreenCtx, currentMask, maskColor, offsetX, offsetY, width, height, zoom, pan, false));
+          maskDrawingPromises.push(drawMask(ctx, currentMask, maskColor, offsetX, offsetY, width, height, zoom, pan, true));
         }
   
         await Promise.all(maskDrawingPromises);
   
-        offscreenCtx.save();
-        offscreenCtx.translate(pan.x, pan.y);
-        offscreenCtx.scale(zoom, zoom);
+        // Draw points
+        ctx.save();
+        ctx.translate(pan.x, pan.y);
+        ctx.scale(zoom, zoom);
   
         const pointRadius = 5 / zoom;
-        points.forEach((point) => {
+        const pointsToDraw = isEditingMask ? editingPoints : points;
+        pointsToDraw.forEach((point) => {
           const canvasX = offsetX + point.normalizedX * width;
           const canvasY = offsetY + point.normalizedY * height;
   
-          offscreenCtx.beginPath();
-          offscreenCtx.arc(canvasX, canvasY, pointRadius, 0, 2 * Math.PI);
-          offscreenCtx.fillStyle = point.type === 1 ? 'blue' : 'red';
-          offscreenCtx.fill();
+          ctx.beginPath();
+          ctx.arc(canvasX, canvasY, pointRadius, 0, 2 * Math.PI);
+          ctx.fillStyle = point.type === 1 ? 'blue' : 'red';
+          ctx.fill();
         });
   
-        offscreenCtx.restore();
-  
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(offscreenCanvas, 0, 0);
+        ctx.restore();
   
         // Draw selected mask edges
         if (selectedMaskEdges && !isEditingMask) {
@@ -278,8 +283,7 @@ const SAMSegmentationUI = () => {
         resolve();
       };
     });
-  }, [currentFullSizeImage, zoom, pan, showAllSegments, currentMask, maskColor, maskOpacity, points, selectedMaskIndex, selectedMaskEdges, isEditingMask]);
-  
+  }, [currentFullSizeImage, zoom, pan, showAllSegments, currentMask, maskColor, maskOpacity, points, editingPoints, selectedMaskIndex, selectedMaskEdges, isEditingMask, images, currentImageIndex]);
 
 
   const debouncedDrawCanvas = useCallback(
