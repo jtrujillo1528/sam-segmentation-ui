@@ -18,10 +18,12 @@ import io
 
 app = FastAPI()
 
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Replace with your React app's URL
+    allow_origins=ALLOWED_ORIGINS,  # Replace with your React app's URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -53,7 +55,6 @@ async def upload_image(file: UploadFile = File(...)):
         "filename": file.filename,
         "width": img.shape[1],
         "height": img.shape[0],
-        "masks": []
     }
     
     return {"message": "Image uploaded", "image_id": image_id}
@@ -64,8 +65,8 @@ async def get_images():
     images = [
         {
             "id": image_id,
-            "filename": data["filename"],
-            "thumbnail": base64.b64encode(cv2.imencode('.jpg', cv2.resize(data["image"], (100, 100)))[1]).decode('utf-8')
+            "width" : data["width"],
+            "height": data["height"]
         }
         for image_id, data in uploaded_images.items()
     ]
@@ -91,27 +92,18 @@ async def initialize_sam(image_id: str = Form(...)):
     
     # Initialize SAM for this image
     predictor.set_image(img)
-    
-    # Store the embedding
-    initialized_images[image_id] = {
-        "embedding": predictor.get_image_embedding().cpu().numpy()
-    }
-    
+
     return {"message": "SAM initialized for image", "image_id": image_id}
 
 @app.post("/predict")
-async def predict(image_id: str = Form(...), points: str = Form(...), labels: str = Form(...)):
-    if image_id not in initialized_images:
-        return JSONResponse({"error": "Image not initialized. Please call /initialize_sam first."}, status_code=400)
+async def predict(points: str = Form(...), labels: str = Form(...)):
+    global currentMask
     
     points_list = json.loads(points)
     labels_list = json.loads(labels)
     
     input_points = np.array(points_list)
     input_labels = np.array(labels_list)
-    
-    # Set the image embedding
-    predictor.set_image_embedding(initialized_images[image_id]["embedding"])
     
     masks, _, _ = predictor.predict(
         point_coords=input_points,
@@ -125,7 +117,8 @@ async def predict(image_id: str = Form(...), points: str = Form(...), labels: st
     # Encode mask as base64
     _, buffer = cv2.imencode('.png', mask)
     mask_base64 = base64.b64encode(buffer).decode('utf-8')
-    
+    currentMask = mask_base64
+
     return mask_base64
 
 
@@ -209,19 +202,35 @@ class MaskData(BaseModel):
     imageIndex: int
 
 @app.post("/save_mask")
-async def save_mask(mask_data: MaskData):
-    image_id = mask_data.image_id
-    if image_id not in saved_masks:
-        saved_masks[image_id] = []
+async def save_mask(
+    image_id: str = Form(...), 
+    label: str = Form(...), 
+    color: str = Form(...),
+    points: str = Form(...), 
+    pointLabels: str = Form(...),
+    mask: str = Form(...)  # Add this parameter
+):
+    try:
+        points_list = json.loads(points)
+        labels_list = json.loads(pointLabels)
+
+        if image_id not in saved_masks:
+            saved_masks[image_id] = []
+        
+        saved_masks[image_id].append({
+            "label": label,
+            "color": color,
+            "points": points_list,
+            "pointLabels": labels_list,
+            "mask": mask  # Use the mask passed in the request
+        })
+        
+        return {"message": "Mask saved successfully"}
     
-    saved_masks[image_id].append({
-        "label": mask_data.label,
-        "points": mask_data.points,
-        "pointLabels": mask_data.pointLabels,
-        "mask": mask_data.mask
-    })
-    
-    return {"message": "Mask saved successfully"}
+    except json.JSONDecodeError as e:
+        return JSONResponse(content={"error": f"JSON decode error: {str(e)}"}, status_code=400)
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
 
 @app.get("/get_masks/{image_id}")
 async def get_masks(image_id: str):

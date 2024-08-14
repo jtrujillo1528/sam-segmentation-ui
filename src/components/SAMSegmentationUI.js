@@ -369,13 +369,20 @@ const SAMSegmentationUI = () => {
       const clickX = (e.clientX - rect.left) * scaleX;
       const clickY = (e.clientY - rect.top) * scaleY;
     
-      const { width, height, offsetX, offsetY } = fitImageToCanvas(images[currentImageIndex], canvas);
+      const img = new Image();
+      img.src = `data:image/png;base64,${currentFullSizeImage}`;
     
-      const adjustedX = (clickX - pan.x) / zoom;
-      const adjustedY = (clickY - pan.y) / zoom;
+      await new Promise((resolve) => {
+        img.onload = async () => {
+          const { width, height, offsetX, offsetY } = fitImageToCanvas(img, canvas);
     
-      const normalizedX = (adjustedX - offsetX) / width;
-      const normalizedY = (adjustedY - offsetY) / height;
+          const adjustedX = (clickX - pan.x) / zoom;
+          const adjustedY = (clickY - pan.y) / zoom;
+    
+          const normalizedX = (adjustedX - offsetX) / width;
+          const normalizedY = (adjustedY - offsetY) / height;
+        
+      
     
       if (normalizedX >= 0 && normalizedX <= 1 && normalizedY >= 0 && normalizedY <= 1) {
         if (isSegmenting) {
@@ -385,7 +392,7 @@ const SAMSegmentationUI = () => {
             type: segmentMode === 'add' ? 1 : 0
           };
           setPoints(prevPoints => [...prevPoints, newPoint]);
-          generateMask(images[currentImageIndex], [...points, newPoint]);
+          generateMask([...points, newPoint]);
         } else if (isEditingMask) {
           const newPoint = { 
             normalizedX: normalizedX,
@@ -393,7 +400,7 @@ const SAMSegmentationUI = () => {
             type: segmentMode === 'add' ? 1 : 0
           };
           setEditingPoints(prevPoints => [...prevPoints, newPoint]);
-          generateMask(images[currentImageIndex], [...editingPoints, newPoint], true);
+          generateMask([...editingPoints, newPoint], true);
         } else {
           // Check if a mask was clicked
           const clickedMaskIndex = await isPointInMask(normalizedX, normalizedY, images[currentImageIndex]);
@@ -404,9 +411,12 @@ const SAMSegmentationUI = () => {
           } else {
             setSelectedMaskIndex(null);
             setSelectedMaskEdges(null);
-          }
-        };
-      }
+            }
+          };
+        }  
+      }   
+      resolve() 
+    });
     };
     
   
@@ -424,18 +434,16 @@ const SAMSegmentationUI = () => {
     };
   
 
-    const generateMask = async (image, currentPoints, isEditing = false) => {
+    const generateMask = async (currentPoints, isEditing = false) => {
       if (currentFullSizeImage && currentPoints.length > 0) {
         setIsLoading(true);
         const formData = new FormData();
-    
-        formData.append('image_id', image.id);
         formData.append('points', JSON.stringify(currentPoints.map(p => [
           Math.round(p.normalizedX * images[currentImageIndex].width),
           Math.round(p.normalizedY * images[currentImageIndex].height)
         ])));
         formData.append('labels', JSON.stringify(currentPoints.map(p => p.type)));
-    
+
         try {
           const response = await fetch('http://localhost:8000/predict', {
             method: 'POST',
@@ -586,30 +594,30 @@ const SAMSegmentationUI = () => {
     }
   };
 
-
+//sort this out
 const handleSaveSegment = async () => {
   if (currentLabel && points.length > 0 && currentMask) {
-    const maskData = {
-      label: currentLabel,
-      points: points,
-      pointLabels: points.map(p => p.type),
-      mask: currentMask,
-      image_id: images[currentImageIndex].id
-    };
+    const formData = new FormData();
+    formData.append('image_id', images[currentImageIndex].id);
+    formData.append('label', currentLabel);
+    formData.append('color', maskColor)
+    formData.append('points', JSON.stringify(points.map(p => [
+      Math.round(p.normalizedX * images[currentImageIndex].width),
+      Math.round(p.normalizedY * images[currentImageIndex].height)
+    ])));
+    formData.append('pointLabels', JSON.stringify(points.map(p => p.type)));
+    formData.append('mask', currentMask);  // Add this line
 
     try {
       const response = await fetch('http://localhost:8000/save_mask', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(maskData),
+        body: formData,
+        credentials: 'include',
       });
-
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
       }
-
       // Refresh the masks for the current image
       const masksResponse = await fetch(`http://localhost:8000/get_masks/${images[currentImageIndex].id}`);
       if (masksResponse.ok) {
