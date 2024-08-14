@@ -97,7 +97,6 @@ async def initialize_sam(image_id: str = Form(...)):
 
 @app.post("/predict")
 async def predict(points: str = Form(...), labels: str = Form(...)):
-    global currentMask
     
     points_list = json.loads(points)
     labels_list = json.loads(labels)
@@ -117,7 +116,6 @@ async def predict(points: str = Form(...), labels: str = Form(...)):
     # Encode mask as base64
     _, buffer = cv2.imencode('.png', mask)
     mask_base64 = base64.b64encode(buffer).decode('utf-8')
-    currentMask = mask_base64
 
     return mask_base64
 
@@ -149,9 +147,9 @@ async def get_point(masks: str = Form(...), point: str = Form(...), dims: str = 
 
 
 @app.post("/get_mask_data")
-async def get_mask_data(mask_index: int = Form(...), image_index: int = Form(...)):
-    if str(image_index) in saved_masks and mask_index < len(saved_masks[str(image_index)]):
-        mask_data = saved_masks[str(image_index)][mask_index]
+async def get_mask_data(mask_index: int = Form(...), image_id: str = Form(...)):
+    if str(image_id) in saved_masks and mask_index < len(saved_masks[image_id]):
+        mask_data = saved_masks[image_id][mask_index]
         
         # Decode base64 mask
         mask_bytes = base64.b64decode(mask_data['mask'])
@@ -161,15 +159,16 @@ async def get_mask_data(mask_index: int = Form(...), image_index: int = Form(...
         # Detect edges
         edges = cv2.Canny(mask_array, 100, 200)
         
-        # Encode edges as base64
-        _, buffer = cv2.imencode('.png', edges)
+        # Create a colored edge image
+        colored_edges = np.zeros((edges.shape[0], edges.shape[1], 4), dtype=np.uint8)
+        colored_edges[edges != 0] = [255, 255, 255, 255]  # Red color for edges
+        
+        # Encode the colored edges as base64
+        _, buffer = cv2.imencode('.png', colored_edges)
         edges_base64 = base64.b64encode(buffer).decode('utf-8')
         
         return JSONResponse({
-            "mask": mask_data['mask'],
-            "edges": edges_base64,
-            "color": mask_data['color'],
-            "label": mask_data['label']
+            "edges": edges_base64
         })
     else:
         return JSONResponse({"error": "Mask not found"}, status_code=404)

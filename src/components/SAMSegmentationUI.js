@@ -192,12 +192,7 @@ const SAMSegmentationUI = () => {
         ctx.scale(zoom, zoom);
         ctx.globalAlpha = maskOpacity;
         ctx.drawImage(tempCanvas, offsetX, offsetY, width, height);
-  
-        if (isSelected) {
-          ctx.strokeStyle = 'blue';
-          ctx.lineWidth = 2 / zoom;
-          ctx.strokeRect(offsetX, offsetY, width, height);
-        }
+
   
         ctx.globalAlpha = 1.0;
         ctx.restore();
@@ -267,25 +262,23 @@ const SAMSegmentationUI = () => {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(offscreenCanvas, 0, 0);
   
+        // Draw selected mask edges
+        if (selectedMaskEdges && !isEditingMask) {
+          const edgesImg = new Image();
+          edgesImg.onload = () => {
+            ctx.save();
+            ctx.translate(pan.x, pan.y);
+            ctx.scale(zoom, zoom);
+            ctx.drawImage(edgesImg, offsetX, offsetY, width, height);
+            ctx.restore();
+          };
+          edgesImg.src = `data:image/png;base64,${selectedMaskEdges}`;
+        }
+  
         resolve();
       };
     });
-
-    if (selectedMaskEdges) {
-      const edgesImg = new Image();
-      edgesImg.onload = () => {
-        ctx.save();
-        ctx.translate(pan.x, pan.y);
-        ctx.scale(zoom, zoom);
-        ctx.globalAlpha = 0.8;
-        ctx.strokeStyle = 'blue';
-        ctx.lineWidth = 2 / zoom;
-        ctx.drawImage(edgesImg, offsetX, offsetY, width, height);
-        ctx.restore();
-      };
-      edgesImg.src = `data:image/png;base64,${selectedMaskEdges}`;
-    }
-  }, [currentFullSizeImage, zoom, pan, showAllSegments, currentMask, maskColor, maskOpacity, points, selectedMaskIndex, selectedMaskEdges]);
+  }, [currentFullSizeImage, zoom, pan, showAllSegments, currentMask, maskColor, maskOpacity, points, selectedMaskIndex, selectedMaskEdges, isEditingMask]);
   
 
 
@@ -302,7 +295,7 @@ const SAMSegmentationUI = () => {
     setIsLoading(true);
     const formData = new FormData();
     formData.append('mask_index', maskIndex);
-    formData.append('image_index', currentImageIndex);
+    formData.append('image_id', images[currentImageIndex].id);
 
     try {
       const response = await fetch('http://localhost:8000/get_mask_data', {
@@ -316,8 +309,6 @@ const SAMSegmentationUI = () => {
 
       const data = await response.json();
       setSelectedMaskEdges(data.edges);
-      setMaskColor(data.color);
-      setCurrentLabel(labels[data.label]);
     } catch (error) {
       console.error('Error fetching mask data:', error);
     } finally {
@@ -430,6 +421,7 @@ const SAMSegmentationUI = () => {
         setCurrentLabel(labels[selectedMask.label]);
         setMaskColor(selectedMask.color);
         setSegmentMode('add'); // Default to 'add' mode when starting to edit
+        setSelectedMaskEdges(null);
       }
     };
   
