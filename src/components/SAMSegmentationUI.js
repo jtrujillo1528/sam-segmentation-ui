@@ -9,7 +9,7 @@ import { Slider } from "./ui/slider";
 import { debounce } from 'lodash';
 
 //to do list
-//figure out how to allow for adding points to a mask while editing and how to delete a mask
+//figure out how to allow for adding points to a mask while editing
 //add paint brush feature
 //add un-do feature for mask editing
 //integrate mongoDB database
@@ -565,16 +565,36 @@ const SAMSegmentationUI = () => {
     setIsPanning(false);
   };
 
-  const handleNewLabel = () => {
+  const handleNewLabel = async () => {
     if (newLabelInput && newLabelInput.trim() !== '') {
       if (selectedMaskIndex !== null) {
         // Update the label of the selected mask
-        setImages(prevImages => {
-          const newImages = [...prevImages];
-          newImages[currentImageIndex].masks[selectedMaskIndex].label = newLabelInput;
-          return newImages;
-        });
-        setSelectedMaskLabel(newLabelInput);
+        try {
+          const response = await fetch('http://localhost:8000/update_mask_label', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              image_id: images[currentImageIndex].id,
+              mask_index: selectedMaskIndex,
+              new_label: newLabelInput,
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+
+          setImages(prevImages => {
+            const newImages = [...prevImages];
+            newImages[currentImageIndex].masks[selectedMaskIndex].label = newLabelInput;
+            return newImages;
+          });
+          setSelectedMaskLabel(newLabelInput);
+        } catch (error) {
+          console.error('Error updating mask label:', error);
+        }
       } else if (!labels.includes(newLabelInput)) {
         // Add a new label
         const updatedLabels = [...labels, newLabelInput];
@@ -725,20 +745,36 @@ const handleSaveSegment = async () => {
     });
   };
 
-  const deleteMask = () => {
-    setImages(prevImages => {
-      const newImages = [...prevImages];
-      const newMasks = newImages[currentImageIndex].masks.filter((_, index) => index !== selectedMaskIndex);
-      newImages[currentImageIndex] = {
-        ...newImages[currentImageIndex],
-        masks: newMasks
-      };
-      return newImages;
-    });
-    setSelectedMaskIndex(null);
-    setIsEditingMask(false);
-    setPoints([]);
-    setCurrentMask(null);
+  const deleteMask = async () => {
+    if (selectedMaskIndex !== null) {
+      try {
+        const response = await fetch('http://localhost:8000/delete_mask', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            image_id: images[currentImageIndex].id,
+            mask_index: selectedMaskIndex,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        setImages(prevImages => {
+          const newImages = [...prevImages];
+          newImages[currentImageIndex].masks = newImages[currentImageIndex].masks.filter((_, index) => index !== selectedMaskIndex);
+          return newImages;
+        });
+        setSelectedMaskIndex(null);
+        setSelectedMaskLabel(null);
+        setNewLabelInput('');
+      } catch (error) {
+        console.error('Error deleting mask:', error);
+      }
+    }
   };
 
 

@@ -40,6 +40,31 @@ saved_masks = {}
 uploaded_images = {}
 labels = []
 
+class UpdateMaskLabel(BaseModel):
+    image_id: str
+    mask_index: int
+    new_label: str
+
+class DeleteMask(BaseModel):
+    image_id: str
+    mask_index: int
+
+@app.post("/update_mask_label")
+async def update_mask_label(data: UpdateMaskLabel):
+    if data.image_id in saved_masks and 0 <= data.mask_index < len(saved_masks[data.image_id]):
+        saved_masks[data.image_id][data.mask_index]['label'] = data.new_label
+        return {"message": "Mask label updated successfully"}
+    else:
+        return JSONResponse({"error": "Mask not found"}, status_code=404)
+
+@app.post("/delete_mask")
+async def delete_mask(data: DeleteMask):
+    if data.image_id in saved_masks and 0 <= data.mask_index < len(saved_masks[data.image_id]):
+        del saved_masks[data.image_id][data.mask_index]
+        return {"message": "Mask deleted successfully"}
+    else:
+        return JSONResponse({"error": "Mask not found"}, status_code=404)
+
 @app.post("/save_labels")
 async def save_labels(labels_list: List[str]):
     global labels
