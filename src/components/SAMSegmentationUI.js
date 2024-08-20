@@ -81,6 +81,24 @@ const SAMSegmentationUI = () => {
     }
   }, [currentImageIndex, images]);
 
+  const saveLabelsToBackend = async (labelsList) => {
+    try {
+      const response = await fetch('http://localhost:8000/save_labels', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(labelsList),
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      console.log('Labels saved successfully');
+    } catch (error) {
+      console.error('Error saving labels:', error);
+    }
+  };
+
   const fetchImages = async () => {
     try {
       const response = await fetch('http://localhost:8000/get_images');
@@ -88,11 +106,12 @@ const SAMSegmentationUI = () => {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       const data = await response.json();
-      setImages(data.images);  // The backend now returns an object with an 'images' property
+      setImages(data.images);
+      setLabels(data.labels); // Set the labels from the backend
       if (data.images.length > 0) {
         setCurrentImageIndex(0);
-        setCurrentFullSizeImage(null);  // Reset the full-size image
-        fetchFullSizeImage(data.images[0].id);  // Fetch the first image
+        setCurrentFullSizeImage(null);
+        fetchFullSizeImage(data.images[0].id);
       }
     } catch (error) {
       console.error("Error fetching images:", error);
@@ -541,9 +560,11 @@ const SAMSegmentationUI = () => {
 
   const handleNewLabel = () => {
     if (newLabelInput && newLabelInput.trim() !== '' && !labels.includes(newLabelInput)) {
-      setLabels(prevLabels => [...prevLabels, newLabelInput]);
+      const updatedLabels = [...labels, newLabelInput];
+      setLabels(updatedLabels);
       setCurrentLabel(newLabelInput);
       setNewLabelInput('');
+      saveLabelsToBackend(updatedLabels); // Save the updated labels to the backend
     }
   };
 

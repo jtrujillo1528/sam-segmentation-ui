@@ -38,6 +38,17 @@ predictor = SamPredictor(sam)
 
 saved_masks = {}
 uploaded_images = {}
+labels = []
+
+@app.post("/save_labels")
+async def save_labels(labels_list: List[str]):
+    global labels
+    labels = labels_list
+    return {"message": "Labels saved successfully"}
+
+@app.get("/get_labels")
+async def get_labels():
+    return {"labels": labels}
 
 @app.post("/upload_image")
 async def upload_image(file: UploadFile = File(...)):
@@ -66,13 +77,13 @@ async def get_images():
     images = [
         {
             "id": image_id,
-            "width" : data["width"],
+            "width": data["width"],
             "height": data["height"],
             "masks": saved_masks.get(image_id, [])
         }
         for image_id, data in uploaded_images.items()
     ]
-    return {"images": images}
+    return {"images": images, "labels": labels}
 
 @app.get("/get_image/{image_id}")
 async def get_image(image_id: str):
