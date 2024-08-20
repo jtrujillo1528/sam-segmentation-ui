@@ -49,6 +49,38 @@ class DeleteMask(BaseModel):
     image_id: str
     mask_index: int
 
+@app.post("/update_mask")
+async def update_mask(
+    image_id: str = Form(...),
+    mask_index: int = Form(...),
+    points: str = Form(...),
+    pointLabels: str = Form(...),
+    mask: str = Form(...),
+    color: str = Form(...),
+    label: str = Form(...)
+):
+    if image_id not in saved_masks or mask_index >= len(saved_masks[image_id]):
+        return JSONResponse({"error": "Mask not found"}, status_code=404)
+    
+    try:
+        points_list = json.loads(points)
+        labels_list = json.loads(pointLabels)
+        
+        saved_masks[image_id][mask_index] = {
+            "label": label,
+            "color": color,
+            "points": points_list,
+            "pointLabels": labels_list,
+            "mask": mask
+        }
+        
+        return {"message": "Mask updated successfully"}
+    
+    except json.JSONDecodeError as e:
+        return JSONResponse(content={"error": f"JSON decode error: {str(e)}"}, status_code=400)
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
 @app.post("/update_mask_label")
 async def update_mask_label(data: UpdateMaskLabel):
     if data.image_id in saved_masks and 0 <= data.mask_index < len(saved_masks[data.image_id]):

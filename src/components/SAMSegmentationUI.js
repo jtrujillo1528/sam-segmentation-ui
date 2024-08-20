@@ -8,8 +8,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Slider } from "./ui/slider";
 import { debounce } from 'lodash';
 
+
 //to do list
-//figure out how to allow for adding points to a mask while editing
+//figure out how to allow for adding points to a mask while editing, simplify label editing to allow for user to change label to something already in drop down menue. Label editing only in edit mask mode
 //add paint brush feature
 //add un-do feature for mask editing
 //integrate mongoDB database
@@ -197,13 +198,16 @@ const SAMSegmentationUI = () => {
         tempCanvas.height = img.height;
         const tempCtx = tempCanvas.getContext('2d');
         tempCtx.drawImage(img, 0, 0);
-  
+
         const imageData = tempCtx.getImageData(0, 0, img.width, img.height);
         const data = imageData.data;
-  
-        const r = parseInt(color.slice(1, 3), 16);
-        const g = parseInt(color.slice(3, 5), 16);
-        const b = parseInt(color.slice(5, 7), 16);
+
+        // Use the current maskColor if color is not provided
+        const currentColor = color || maskColor;
+        const r = parseInt(currentColor.slice(1, 3), 16);
+        const g = parseInt(currentColor.slice(3, 5), 16);
+        const b = parseInt(currentColor.slice(5, 7), 16);
+
         for (let i = 0; i < data.length; i += 4) {
           const alpha = data[i];
           data[i] = r;
@@ -211,24 +215,23 @@ const SAMSegmentationUI = () => {
           data[i + 2] = b;
           data[i + 3] = alpha;
         }
-  
+
         tempCtx.putImageData(imageData, 0, 0);
-  
+
         ctx.save();
         ctx.translate(pan.x, pan.y);
         ctx.scale(zoom, zoom);
         ctx.globalAlpha = maskOpacity;
         ctx.drawImage(tempCanvas, offsetX, offsetY, width, height);
 
-  
         ctx.globalAlpha = 1.0;
         ctx.restore();
-  
+
         resolve();
       };
       img.src = `data:image/png;base64,${maskBase64}`;
     });
-  }, [maskOpacity]);
+  }, [maskOpacity, maskColor]);
   
   const drawCanvas = useCallback(async () => {
     const canvas = canvasRef.current;
@@ -607,20 +610,30 @@ const SAMSegmentationUI = () => {
   };
 
   const handleNewSegment = () => {
+    const newColor = generateRandomColor();
     setIsSegmenting(true);
-    setSegmentMode(null);
+    setSegmentMode('add');
     setPoints([]);
     setCurrentMask(null);
-    setSegmentMode('add'); // Default to 'add' mode when starting to edit
-    if (images[currentImageIndex] && isInitialized == false) {
+    setMaskColor(newColor); // Set the new random color
+    if (images[currentImageIndex] && !isInitialized) {
       initializeSAM(images[currentImageIndex]);
-      setInitialized(true)
+      setInitialized(true);
     }
   };
 
   const generateRandomColor = () => {
-    const randomColor = Math.floor(Math.random()*16777215).toString(16);
-    setMaskColor("#" + randomColor);
+    return "#" + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
+  };
+
+  const handleRandomColor = () => {
+    const newColor = generateRandomColor();
+    setMaskColor(newColor);
+    if (isSegmenting || isEditingMask) {
+      // If currently segmenting or editing, update the current mask color
+      // You might need to regenerate the mask with the new color here
+      // For example: generateMask(points, isEditingMask, newColor);
+    }
   };
 
   const initializeSAM = async (image) => {
@@ -779,12 +792,51 @@ const handleSaveSegment = async () => {
 
 
 
-  const saveMaskEdits = () => {
-    updateSelectedMask();
-    setIsEditingMask(false);
-    setEditingPoints([]);
-    setCurrentMask(null);
-    setSelectedMaskIndex(null);
+  const saveMaskEdits = async () => {
+    if (selectedMaskIndex !== null) {
+      try {
+        const formData = new FormData();
+        formData.append('image_id', images[currentImageIndex].id);
+        formData.append('mask_index', selectedMaskIndex);
+        formData.append('points', JSON.stringify(editingPoints.map(p => [
+          Math.round(p.normalizedX * images[currentImageIndex].width),
+          Math.round(p.normalizedY * images[currentImageIndex].height)
+        ])));
+        formData.append('pointLabels', JSON.stringify(editingPoints.map(p => p.type)));
+        formData.append('mask', currentMask);
+        formData.append('color', maskColor);  // Add this line to include the updated color
+        formData.append('label', currentLabel);
+  
+        const response = await fetch('http://localhost:8000/update_mask', {
+          method: 'POST',
+          body: formData,
+        });
+  
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+  
+        // Update the local state
+        setImages(prevImages => {
+          const newImages = [...prevImages];
+          newImages[currentImageIndex].masks[selectedMaskIndex] = {
+            ...newImages[currentImageIndex].masks[selectedMaskIndex],
+            points: editingPoints,
+            mask: currentMask,
+            color: maskColor,
+            label: currentLabel
+          };
+          return newImages;
+        });
+  
+        setIsEditingMask(false);
+        setEditingPoints([]);
+        setCurrentMask(null);
+        setSelectedMaskIndex(null);
+      } catch (error) {
+        console.error('Error saving mask edits:', error);
+      }
+    }
   };
   
   const cancelMaskEdits = () => {
@@ -911,7 +963,7 @@ const handleSaveSegment = async () => {
             onChange={(e) => setMaskColor(e.target.value)}
             className="w-8 h-8 bg-gray-700 border border-blue-500"
           />
-          <Button onClick={generateRandomColor} className="text-xs bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
+          <Button onClick={handleRandomColor} className="text-xs bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
             Random Color
           </Button>
         </div>
