@@ -37,7 +37,6 @@ sam.to(device=DEVICE)
 predictor = SamPredictor(sam)
 
 saved_masks = {}
-initialized_images = {}
 uploaded_images = {}
 
 @app.post("/upload_image")
@@ -56,6 +55,8 @@ async def upload_image(file: UploadFile = File(...)):
         "width": img.shape[1],
         "height": img.shape[0],
     }
+
+    saved_masks[image_id] = []
     
     return {"message": "Image uploaded", "image_id": image_id}
 
@@ -66,7 +67,8 @@ async def get_images():
         {
             "id": image_id,
             "width" : data["width"],
-            "height": data["height"]
+            "height": data["height"],
+            "masks": saved_masks[image_id]
         }
         for image_id, data in uploaded_images.items()
     ]
@@ -212,9 +214,6 @@ async def save_mask(
     try:
         points_list = json.loads(points)
         labels_list = json.loads(pointLabels)
-
-        if image_id not in saved_masks:
-            saved_masks[image_id] = []
         
         saved_masks[image_id].append({
             "label": label,

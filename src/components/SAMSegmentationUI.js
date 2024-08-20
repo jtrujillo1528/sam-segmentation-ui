@@ -9,7 +9,6 @@ import { Slider } from "./ui/slider";
 import { debounce } from 'lodash';
 
 //to do list
-//figure out how to initiate SAM for image if moving backwards through images and editing
 //figure out how to allow for adding points to a mask while editing and how to delete a mask
 //add paint brush feature
 //add un-do feature for mask editing
@@ -42,6 +41,7 @@ const SAMSegmentationUI = () => {
   const [editingPoints, setEditingPoints] = useState([]);
   const [selectedMaskEdges, setSelectedMaskEdges] = useState(null);
   const [currentFullSizeImage, setCurrentFullSizeImage] = useState(null);
+  const [isInitialized, setInitialized] = useState(false)
   
 
   const canvasRef = useRef(null);
@@ -552,8 +552,9 @@ const SAMSegmentationUI = () => {
     setPoints([]);
     setCurrentMask(null);
     setSegmentMode('add'); // Default to 'add' mode when starting to edit
-    if (images[currentImageIndex] && (!images[currentImageIndex].masks || images[currentImageIndex].masks.length === 0)) {
+    if (images[currentImageIndex] && isInitialized == false) {
       initializeSAM(images[currentImageIndex]);
+      setInitialized(true)
     }
   };
 
@@ -646,6 +647,7 @@ const handleSaveSegment = async () => {
       setZoom(1);
       setPan({ x: 0, y: 0 });
       setCurrentMask(null);
+      setInitialized(false);
     }
   };
 
@@ -656,6 +658,7 @@ const handleSaveSegment = async () => {
       setZoom(1);
       setPan({ x: 0, y: 0 });
       setCurrentMask(null);
+      setInitialized(false);
     }
   };
 
