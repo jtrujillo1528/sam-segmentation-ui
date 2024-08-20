@@ -42,6 +42,7 @@ const SAMSegmentationUI = () => {
   const [selectedMaskEdges, setSelectedMaskEdges] = useState(null);
   const [currentFullSizeImage, setCurrentFullSizeImage] = useState(null);
   const [isInitialized, setInitialized] = useState(false)
+  const [selectedMaskLabel, setSelectedMaskLabel] = useState(null);
   
 
   const canvasRef = useRef(null);
@@ -346,7 +347,6 @@ const SAMSegmentationUI = () => {
       setIsLoading(true);
       const formData = new FormData();
   
-      // Send only the base64 string of each mask
       formData.append('masks', JSON.stringify(image.masks.map(mask => mask.mask)));
       formData.append('point', JSON.stringify([x, y]));
       formData.append('dims', JSON.stringify([image.width, image.height]));
@@ -365,7 +365,12 @@ const SAMSegmentationUI = () => {
   
         const selection = await response.json();
         setIsLoading(false);
-        return selection;
+        if (selection !== null) {
+          return {
+            index: selection,
+            label: image.masks[selection].label
+          };
+        }
       } catch (error) {
         console.error('Error checking point in mask:', error);
         setIsLoading(false);
@@ -374,80 +379,82 @@ const SAMSegmentationUI = () => {
     return null;
   };
 
-
-    const handleCanvasClick = async (e) => {
-      const canvas = canvasRef.current;
-      const rect = canvas.getBoundingClientRect();
-      const scaleX = canvas.width / rect.width;
-      const scaleY = canvas.height / rect.height;
-    
-      const clickX = (e.clientX - rect.left) * scaleX;
-      const clickY = (e.clientY - rect.top) * scaleY;
-    
-      const img = new Image();
-      img.src = `data:image/png;base64,${currentFullSizeImage}`;
-    
-      await new Promise((resolve) => {
-        img.onload = async () => {
-          const { width, height, offsetX, offsetY } = fitImageToCanvas(img, canvas);
-    
-          const adjustedX = (clickX - pan.x) / zoom;
-          const adjustedY = (clickY - pan.y) / zoom;
-    
-          const normalizedX = (adjustedX - offsetX) / width;
-          const normalizedY = (adjustedY - offsetY) / height;
-        
+  const handleCanvasClick = async (e) => {
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+  
+    const clickX = (e.clientX - rect.left) * scaleX;
+    const clickY = (e.clientY - rect.top) * scaleY;
+  
+    const img = new Image();
+    img.src = `data:image/png;base64,${currentFullSizeImage}`;
+  
+    await new Promise((resolve) => {
+      img.onload = async () => {
+        const { width, height, offsetX, offsetY } = fitImageToCanvas(img, canvas);
+  
+        const adjustedX = (clickX - pan.x) / zoom;
+        const adjustedY = (clickY - pan.y) / zoom;
+  
+        const normalizedX = (adjustedX - offsetX) / width;
+        const normalizedY = (adjustedY - offsetY) / height;
       
-    
-      if (normalizedX >= 0 && normalizedX <= 1 && normalizedY >= 0 && normalizedY <= 1) {
-        if (isSegmenting) {
-          const newPoint = { 
-            normalizedX: normalizedX,
-            normalizedY: normalizedY,
-            type: segmentMode === 'add' ? 1 : 0
-          };
-          setPoints(prevPoints => [...prevPoints, newPoint]);
-          generateMask([...points, newPoint]);
-        } else if (isEditingMask) {
-          const newPoint = { 
-            normalizedX: normalizedX,
-            normalizedY: normalizedY,
-            type: segmentMode === 'add' ? 1 : 0
-          };
-          setEditingPoints(prevPoints => [...prevPoints, newPoint]);
-          generateMask([...editingPoints, newPoint], true);
-        } else {
-          // Check if a mask was clicked
-          const clickedMaskIndex = await isPointInMask(normalizedX, normalizedY, images[currentImageIndex]);
-          
-          if (clickedMaskIndex !== null) {
-            setSelectedMaskIndex(clickedMaskIndex);
-            await fetchMaskData(clickedMaskIndex);
+        if (normalizedX >= 0 && normalizedX <= 1 && normalizedY >= 0 && normalizedY <= 1) {
+          if (isSegmenting) {
+            const newPoint = { 
+              normalizedX: normalizedX,
+              normalizedY: normalizedY,
+              type: segmentMode === 'add' ? 1 : 0
+            };
+            setPoints(prevPoints => [...prevPoints, newPoint]);
+            generateMask([...points, newPoint]);
+          } else if (isEditingMask) {
+            const newPoint = { 
+              normalizedX: normalizedX,
+              normalizedY: normalizedY,
+              type: segmentMode === 'add' ? 1 : 0
+            };
+            setEditingPoints(prevPoints => [...prevPoints, newPoint]);
+            generateMask([...editingPoints, newPoint], true);
           } else {
-            setSelectedMaskIndex(null);
-            setSelectedMaskEdges(null);
+            // Check if a mask was clicked
+            const clickedMask = await isPointInMask(normalizedX, normalizedY, images[currentImageIndex]);
+            
+            if (clickedMask !== null) {
+              setSelectedMaskIndex(clickedMask.index);
+              setSelectedMaskLabel(clickedMask.label);
+              setNewLabelInput(clickedMask.label); // Set the input box value to the selected mask's label
+              await fetchMaskData(clickedMask.index);
+            } else {
+              setSelectedMaskIndex(null);
+              setSelectedMaskLabel(null);
+              setNewLabelInput(''); // Clear the input box when no mask is selected
+              setSelectedMaskEdges(null);
             }
-          };
+          }
         }  
       }   
-      resolve() 
+      resolve();
     });
-    };
+  };
     
   
 
-    const startEditingMask = () => {
-      if (selectedMaskIndex !== null) {
-        const selectedMask = images[currentImageIndex].masks[selectedMaskIndex];
-        setIsEditingMask(true);
-        setEditingPoints(selectedMask.points);
-        setCurrentMask(selectedMask.mask);
-        setCurrentLabel(labels[selectedMask.label]);
-        setMaskColor(selectedMask.color);
-        setSegmentMode('add'); // Default to 'add' mode when starting to edit
-        setSelectedMaskEdges(null);
-      }
-    };
+  const startEditingMask = () => {
+    if (selectedMaskIndex !== null) {
+      const selectedMask = images[currentImageIndex].masks[selectedMaskIndex];
+      setIsEditingMask(true);
+      setEditingPoints(selectedMask.points);
+      setCurrentMask(selectedMask.mask);
+      setCurrentLabel(selectedMask.label);
+      setNewLabelInput(selectedMask.label); // Set the input box value to the selected mask's label
+      setMaskColor(selectedMask.color);
+      setSegmentMode('add');
+      setSelectedMaskEdges(null);
+    }
+  };
   
 
     const generateMask = async (currentPoints, isEditing = false) => {
@@ -559,12 +566,23 @@ const SAMSegmentationUI = () => {
   };
 
   const handleNewLabel = () => {
-    if (newLabelInput && newLabelInput.trim() !== '' && !labels.includes(newLabelInput)) {
-      const updatedLabels = [...labels, newLabelInput];
-      setLabels(updatedLabels);
-      setCurrentLabel(newLabelInput);
+    if (newLabelInput && newLabelInput.trim() !== '') {
+      if (selectedMaskIndex !== null) {
+        // Update the label of the selected mask
+        setImages(prevImages => {
+          const newImages = [...prevImages];
+          newImages[currentImageIndex].masks[selectedMaskIndex].label = newLabelInput;
+          return newImages;
+        });
+        setSelectedMaskLabel(newLabelInput);
+      } else if (!labels.includes(newLabelInput)) {
+        // Add a new label
+        const updatedLabels = [...labels, newLabelInput];
+        setLabels(updatedLabels);
+        setCurrentLabel(newLabelInput);
+        saveLabelsToBackend(updatedLabels);
+      }
       setNewLabelInput('');
-      saveLabelsToBackend(updatedLabels); // Save the updated labels to the backend
     }
   };
 
@@ -775,12 +793,17 @@ const handleSaveSegment = async () => {
         <Input
           value={newLabelInput}
           onChange={(e) => setNewLabelInput(e.target.value)}
-          placeholder="Enter new label"
+          placeholder={selectedMaskIndex !== null ? "Edit mask label" : "Enter new label"}
           className="bg-gray-700 text-white border-blue-500"
         />
   
-        <Button onClick={handleNewLabel} disabled={!newLabelInput.trim()} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
-          <Plus className="mr-2 h-4 w-4" /> Add Label
+        <Button 
+          onClick={handleNewLabel} 
+          disabled={!newLabelInput.trim()} 
+          className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500"
+        >
+          <Plus className="mr-2 h-4 w-4" /> 
+          {selectedMaskIndex !== null ? "Update Label" : "Add Label"}
         </Button>
   
         {!isSegmenting && !isEditingMask && (
@@ -790,9 +813,14 @@ const handleSaveSegment = async () => {
         )}
   
         {!isSegmenting && !isEditingMask && selectedMaskIndex !== null && (
-          <Button onClick={startEditingMask} className="bg-blue-600 hover:bg-blue-700 text-white">
-            <Edit className="mr-2 h-4 w-4" /> Edit Selected Mask
-          </Button>
+          <>
+            <Button onClick={startEditingMask} className="bg-blue-600 hover:bg-blue-700 text-white">
+              <Edit className="mr-2 h-4 w-4" /> Edit Selected Mask
+            </Button>
+            <Button onClick={deleteMask} className="bg-red-600 hover:bg-red-700 text-white">
+              <X className="mr-2 h-4 w-4" /> Delete Selected Mask
+            </Button>
+          </>
         )}
   
         {(isSegmenting || isEditingMask) && (
