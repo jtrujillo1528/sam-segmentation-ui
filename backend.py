@@ -68,7 +68,7 @@ async def get_images():
             "id": image_id,
             "width" : data["width"],
             "height": data["height"],
-            "masks": saved_masks[image_id]
+            "masks": saved_masks.get(image_id, [])
         }
         for image_id, data in uploaded_images.items()
     ]

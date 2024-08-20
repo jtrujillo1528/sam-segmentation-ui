@@ -76,7 +76,7 @@ const SAMSegmentationUI = () => {
   }, []);
 
   useEffect(() => {
-    if (images.length > 0) {
+    if (images.length > 0 && currentImageIndex >= 0 && currentImageIndex < images.length) {
       fetchFullSizeImage(images[currentImageIndex].id);
     }
   }, [currentImageIndex, images]);
@@ -88,10 +88,12 @@ const SAMSegmentationUI = () => {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       const data = await response.json();
-      // Initialize masks for each image
-      const imagesWithMasks = data.images.map(img => ({ ...img, masks: [] }));
-      setImages(imagesWithMasks);
-      setCurrentImageIndex(0);
+      setImages(data.images);  // The backend now returns an object with an 'images' property
+      if (data.images.length > 0) {
+        setCurrentImageIndex(0);
+        setCurrentFullSizeImage(null);  // Reset the full-size image
+        fetchFullSizeImage(data.images[0].id);  // Fetch the first image
+      }
     } catch (error) {
       console.error("Error fetching images:", error);
     }
@@ -232,7 +234,6 @@ const SAMSegmentationUI = () => {
   
         if (showAllSegments && images[currentImageIndex] && images[currentImageIndex].masks) {
           images[currentImageIndex].masks.forEach((maskData, index) => {
-            // Skip drawing the mask if it's currently being edited
             if (isEditingMask && index === selectedMaskIndex) {
               return;
             }
@@ -615,19 +616,22 @@ const handleSaveSegment = async () => {
         const errorText = await response.text();
         throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
       }
-      // Refresh the masks for the current image
-      const masksResponse = await fetch(`http://localhost:8000/get_masks/${images[currentImageIndex].id}`);
-      if (masksResponse.ok) {
-        const masksData = await masksResponse.json();
-        setImages(prevImages => {
-          const newImages = [...prevImages];
-          newImages[currentImageIndex] = {
-            ...newImages[currentImageIndex],
-            masks: masksData
-          };
-          return newImages;
-        });
-      }
+      // Update the local state instead of fetching masks again
+      setImages(prevImages => {
+        const newImages = [...prevImages];
+        const newMask = {
+          label: currentLabel,
+          color: maskColor,
+          points: points,
+          pointLabels: points.map(p => p.type),
+          mask: currentMask
+        };
+        if (!newImages[currentImageIndex].masks) {
+          newImages[currentImageIndex].masks = [];
+        }
+        newImages[currentImageIndex].masks.push(newMask);
+        return newImages;
+      });
 
     } catch (error) {
       console.error("Error saving mask:", error);
