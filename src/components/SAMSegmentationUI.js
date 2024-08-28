@@ -10,7 +10,6 @@ import { debounce } from 'lodash';
 
 
 //to do list
-//figure out how to allow for adding points to a mask while editing
 //add paint brush feature
 //yolov8 mask format output
 //add un-do feature for mask editing
@@ -46,7 +45,7 @@ const SAMSegmentationUI = () => {
   const [isInitialized, setInitialized] = useState(false)
   const [selectedMaskLabel, setSelectedMaskLabel] = useState(null);
   const [maskPointsHistory, setMaskPointsHistory] = useState({});
-  
+  const [isLabelSelected, setIsLabelSelected] = useState(false);
 
   const canvasRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -84,6 +83,23 @@ const SAMSegmentationUI = () => {
       fetchFullSizeImage(images[currentImageIndex].id);
     }
   }, [currentImageIndex]);
+
+  useEffect(() => {
+    if (selectedMaskLabel) {
+      setNewLabelInput(selectedMaskLabel);
+      setIsLabelSelected(true);
+    } else {
+      setNewLabelInput('');
+      setIsLabelSelected(false);
+    }
+  }, [selectedMaskLabel]);
+
+  useEffect(() => {
+    if (currentLabel) {
+      setNewLabelInput(currentLabel);
+      setIsLabelSelected(true);
+    }
+  }, [currentLabel]);
 
   const saveLabelsToBackend = async (labelsList) => {
     try {
@@ -623,6 +639,7 @@ const SAMSegmentationUI = () => {
         saveLabelsToBackend(updatedLabels);
       }
       setNewLabelInput('');
+      setIsLabelSelected(false);
     }
   };
 
@@ -943,14 +960,18 @@ const handleSaveSegment = async () => {
       {/* Sidebar */}
       <div className="w-64 h-full bg-gray-800 shadow-lg p-4 flex flex-col space-y-4 overflow-y-auto">
         <Select 
-          value={currentLabel} 
-          onValueChange={setCurrentLabel}
+          value={currentLabel}
+          onValueChange={(value) => {
+            setCurrentLabel(value);
+            setNewLabelInput(value);
+            setIsLabelSelected(true);
+          }}
           disabled={labels.length === 0}
         >
           <SelectTrigger className="w-full bg-gray-700 text-white border-blue-500">
-            <SelectValue placeholder="Select a label" />
+            <SelectValue placeholder="Labels" />
           </SelectTrigger>
-          <SelectContent className="bg-gray-700 text-white">
+          <SelectContent className="bg-gray-700 text-white z-50 max-h-60 overflow-auto">
             {labels.map((label, index) => (
               <SelectItem 
                 key={index} 
@@ -962,11 +983,18 @@ const handleSaveSegment = async () => {
             ))}
           </SelectContent>
         </Select>
-  
+          
         <Input
           value={newLabelInput}
-          onChange={(e) => setNewLabelInput(e.target.value)}
-          placeholder={isEditingMask ? "Update mask label" : "Enter new label"}
+          onChange={(e) => {
+            setNewLabelInput(e.target.value);
+            setIsLabelSelected(false);
+          }}
+          placeholder={
+            isEditingMask
+              ? "Update mask label"
+              : "Enter new label"
+          }
           className="bg-gray-700 text-white border-blue-500"
         />
   
