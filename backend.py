@@ -277,7 +277,7 @@ async def save_mask(
     color: str = Form(...),
     points: str = Form(...), 
     pointLabels: str = Form(...),
-    mask: str = Form(...)  # Add this parameter
+    mask: str = Form(...)
 ):
     try:
         points_list = json.loads(points)
@@ -288,10 +288,10 @@ async def save_mask(
             "color": color,
             "points": points_list,
             "pointLabels": labels_list,
-            "mask": mask  # Use the mask passed in the request
+            "mask": mask
         })
         
-        return {"message": "Mask saved successfully"}
+        return {"message": "Mask saved successfully", "mask_index": len(saved_masks[image_id]) - 1}
     
     except json.JSONDecodeError as e:
         return JSONResponse(content={"error": f"JSON decode error: {str(e)}"}, status_code=400)
