@@ -426,6 +426,7 @@ const SAMSegmentationUI = () => {
             const clickedMask = await isPointInMask(normalizedX, normalizedY, images[currentImageIndex]);
             
             if (clickedMask !== null) {
+              setSelectedMaskEdges(null);
               setSelectedMaskIndex(clickedMask.index);
               setSelectedMaskLabel(clickedMask.label);
               setNewLabelInput(clickedMask.label); // Set the input box value to the selected mask's label
@@ -773,6 +774,7 @@ const handleSaveSegment = async () => {
       setPan({ x: 0, y: 0 });
       setCurrentMask(null);
       setInitialized(false);
+      setSelectedMaskEdges(null);
     }
   };
 
@@ -784,6 +786,7 @@ const handleSaveSegment = async () => {
       setPan({ x: 0, y: 0 });
       setCurrentMask(null);
       setInitialized(false);
+      setSelectedMaskEdges(null);
     }
   };
 
@@ -833,6 +836,7 @@ const handleSaveSegment = async () => {
         setSelectedMaskIndex(null);
         setSelectedMaskLabel(null);
         setNewLabelInput('');
+        setSelectedMaskEdges(null);
       } catch (error) {
         console.error('Error deleting mask:', error);
       }
