@@ -10,8 +10,9 @@ import { debounce } from 'lodash';
 
 
 //to do list
-//figure out how to allow for adding points to a mask while editing, simplify label editing to allow for user to change label to something already in drop down menue. Label editing only in edit mask mode
+//figure out how to allow for adding points to a mask while editing
 //add paint brush feature
+//yolov8 mask format output
 //add un-do feature for mask editing
 //integrate mongoDB database
 //allow for user log-in and project definition
@@ -71,7 +72,7 @@ const SAMSegmentationUI = () => {
       await drawCanvas();
     };
     updateCanvas();
-  }, [currentImageIndex, images, points, zoom, pan, maskColor, maskOpacity, showAllSegments]);
+  }, [currentImageIndex, points, zoom, pan, maskColor, maskOpacity, showAllSegments]);
 
   useEffect(() => {
     fetchImages();
@@ -81,7 +82,7 @@ const SAMSegmentationUI = () => {
     if (images.length > 0 && currentImageIndex >= 0 && currentImageIndex < images.length) {
       fetchFullSizeImage(images[currentImageIndex].id);
     }
-  }, [currentImageIndex, images]);
+  }, [currentImageIndex]);
 
   const saveLabelsToBackend = async (labelsList) => {
     try {
@@ -257,6 +258,7 @@ const SAMSegmentationUI = () => {
   
         if (showAllSegments && images[currentImageIndex] && images[currentImageIndex].masks) {
           images[currentImageIndex].masks.forEach((maskData, index) => {
+            // Skip drawing the mask if it's currently being edited
             if (isEditingMask && index === selectedMaskIndex) {
               return;
             }
@@ -264,12 +266,10 @@ const SAMSegmentationUI = () => {
             maskDrawingPromises.push(drawMask(ctx, maskData.mask, maskData.color, offsetX, offsetY, width, height, zoom, pan, isSelected));
           });
         }
-  
         // Draw the current mask being edited or created
-        if (currentMask) {
+        if (currentMask && (isSegmenting || isEditingMask)) {
           maskDrawingPromises.push(drawMask(ctx, currentMask, maskColor, offsetX, offsetY, width, height, zoom, pan, true));
         }
-  
         await Promise.all(maskDrawingPromises);
   
         // Draw points
@@ -311,7 +311,7 @@ const SAMSegmentationUI = () => {
 
 
   const debouncedDrawCanvas = useCallback(
-    debounce(() => drawCanvas(), 16),  // 60 fps
+    debounce(() => drawCanvas(), 60),  // 60 fps
     [drawCanvas]
   );
 
@@ -665,6 +665,46 @@ const SAMSegmentationUI = () => {
   };
 
 //sort this out
+const handleUpdateLabel = () => {
+  if (newLabelInput && newLabelInput.trim() !== '') {
+    setImages(prevImages => {
+      const newImages = [...prevImages];
+      newImages[currentImageIndex].masks[selectedMaskIndex].label = newLabelInput;
+      return newImages;
+    });
+    setCurrentLabel(newLabelInput);
+    setNewLabelInput('');
+    
+    // Update the label in the backend
+    updateLabelInBackend(images[currentImageIndex].id, selectedMaskIndex, newLabelInput);
+  }
+};
+
+// You'll need to implement this function to update the label in your backend
+const updateLabelInBackend = async (imageId, maskIndex, newLabel) => {
+  try {
+    const response = await fetch('http://localhost:8000/update_mask_label', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        image_id: imageId,
+        mask_index: maskIndex,
+        new_label: newLabel,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    console.log('Mask label updated successfully');
+  } catch (error) {
+    console.error('Error updating mask label:', error);
+  }
+};
+
 const handleSaveSegment = async () => {
   if (currentLabel && points.length > 0 && currentMask) {
     const formData = new FormData();
@@ -688,7 +728,7 @@ const handleSaveSegment = async () => {
         const errorText = await response.text();
         throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
       }
-      // Update the local state instead of fetching masks again
+      
       setImages(prevImages => {
         const newImages = [...prevImages];
         const newMask = {
@@ -701,18 +741,27 @@ const handleSaveSegment = async () => {
         if (!newImages[currentImageIndex].masks) {
           newImages[currentImageIndex].masks = [];
         }
-        newImages[currentImageIndex].masks.push(newMask);
+        // Check if a mask with the same content already exists
+        const maskExists = newImages[currentImageIndex].masks.some(
+          existingMask => 
+            existingMask.label === newMask.label &&
+            existingMask.color === newMask.color &&
+            existingMask.mask === newMask.mask
+        );
+        if (!maskExists) {
+          newImages[currentImageIndex].masks.push(newMask);
+        }
         return newImages;
       });
+
+      setIsSegmenting(false);
+      setSegmentMode(null);
+      setPoints([]);
+      setCurrentMask(null);
 
     } catch (error) {
       console.error("Error saving mask:", error);
     }
-
-    setIsSegmenting(false);
-    setSegmentMode(null);
-    setPoints([]);
-    setCurrentMask(null);
   }
 };
 
@@ -881,18 +930,31 @@ const handleSaveSegment = async () => {
         <Input
           value={newLabelInput}
           onChange={(e) => setNewLabelInput(e.target.value)}
-          placeholder={selectedMaskIndex !== null ? "Edit mask label" : "Enter new label"}
+          placeholder={isEditingMask ? "Update mask label" : "Enter new label"}
           className="bg-gray-700 text-white border-blue-500"
         />
   
-        <Button 
-          onClick={handleNewLabel} 
-          disabled={!newLabelInput.trim()} 
-          className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500"
-        >
-          <Plus className="mr-2 h-4 w-4" /> 
-          {selectedMaskIndex !== null ? "Update Label" : "Add Label"}
-        </Button>
+        {/* Show "Update Label" button only when editing a mask */}
+        {isEditingMask && (
+          <Button 
+            onClick={handleUpdateLabel} 
+            disabled={!newLabelInput.trim()} 
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            <Edit className="mr-2 h-4 w-4" /> Update Label
+          </Button>
+        )}
+  
+        {/* Show "Add Label" button when not editing a mask */}
+        {!isEditingMask && (
+          <Button 
+            onClick={handleNewLabel} 
+            disabled={!newLabelInput.trim()} 
+            className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500"
+          >
+            <Plus className="mr-2 h-4 w-4" /> Add Label
+          </Button>
+        )}
   
         {!isSegmenting && !isEditingMask && (
           <Button onClick={handleNewSegment} disabled={!currentLabel} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
