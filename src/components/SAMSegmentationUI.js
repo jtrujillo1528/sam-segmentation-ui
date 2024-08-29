@@ -13,6 +13,7 @@ import { debounce } from 'lodash';
 //add paint brush feature
 //yolov8 mask format output
 //add un-do feature for mask editing
+//fix scrolling and panning on canvas
 //integrate mongoDB database
 //allow for user log-in and project definition
 
@@ -37,7 +38,6 @@ const SAMSegmentationUI = () => {
   const [currentLabel, setCurrentLabel] = useState('');
   const [isEditingMask, setIsEditingMask] = useState(false);
   const [selectedMaskIndex, setSelectedMaskIndex] = useState(null);
-  const [editingLabel, setEditingLabel] = useState('');
   const [newLabelInput, setNewLabelInput] = useState('');
   const [editingPoints, setEditingPoints] = useState([]);
   const [selectedMaskEdges, setSelectedMaskEdges] = useState(null);
