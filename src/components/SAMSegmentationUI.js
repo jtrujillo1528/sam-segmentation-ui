@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Plus, Minus, Tag, Upload, Save, Eye, EyeOff, ChevronLeft, ChevronRight, Edit, X } from 'lucide-react';
+import { Plus, Minus, Tag, Upload, Save, Eye, EyeOff, ChevronLeft, ChevronRight, Edit, X, Brush, Trash2 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
@@ -46,8 +46,14 @@ const SAMSegmentationUI = () => {
   const [selectedMaskLabel, setSelectedMaskLabel] = useState(null);
   const [maskPointsHistory, setMaskPointsHistory] = useState({});
   const [isLabelSelected, setIsLabelSelected] = useState(false);
+  const [isPaintBrushActive, setIsPaintBrushActive] = useState(false);
+  const [paintBrushSize, setPaintBrushSize] = useState(10);
+  const [paintBrushMode, setPaintBrushMode] = useState('add');
+  const [paintMask, setPaintMask] = useState(null);
+  const [isPainting, setIsPainting] = useState(false);
 
   const canvasRef = useRef(null);
+  const paintCanvasRef = useRef(null);
   const fileInputRef = useRef(null);
 
 
@@ -57,6 +63,15 @@ const SAMSegmentationUI = () => {
       canvas.style.cursor = isPanning ? 'grabbing' : 'default';
     }
   }, [isPanning]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const paintCanvas = paintCanvasRef.current;
+    if (canvas && paintCanvas) {
+      paintCanvas.width = canvas.width;
+      paintCanvas.height = canvas.height;
+    }
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -81,8 +96,10 @@ const SAMSegmentationUI = () => {
   useEffect(() => {
     if (images.length > 0 && currentImageIndex >= 0 && currentImageIndex < images.length) {
       fetchFullSizeImage(images[currentImageIndex].id);
+    } else if (images.length === 0) {
+      setCurrentFullSizeImage(null);
     }
-  }, [currentImageIndex]);
+  }, [currentImageIndex, images]);
 
   useEffect(() => {
     if (selectedMaskLabel) {
@@ -100,6 +117,8 @@ const SAMSegmentationUI = () => {
       setIsLabelSelected(true);
     }
   }, [currentLabel]);
+
+
 
   const saveLabelsToBackend = async (labelsList) => {
     try {
@@ -180,6 +199,50 @@ const SAMSegmentationUI = () => {
     await fetchImages();
   };
 
+  const deleteImage = async (imageId) => {
+    try {
+      const response = await fetch(`http://localhost:8000/delete_image/${imageId}`, {
+        method: 'DELETE',
+      });
+  
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+  
+      // Remove the image from the local state
+      setImages(prevImages => {
+        const newImages = prevImages.filter(img => img.id !== imageId);
+        
+        // Update currentImageIndex if necessary
+        if (newImages.length === 0) {
+          setCurrentImageIndex(-1);
+        } else if (currentImageIndex >= newImages.length) {
+          setCurrentImageIndex(newImages.length - 1);
+        }
+        
+        return newImages;
+      });
+  
+      // Clear current full-size image and reset other states
+      setCurrentFullSizeImage(null);
+      setPoints([]);
+      setCurrentMask(null);
+      setSelectedMaskIndex(null);
+      setSelectedMaskLabel(null);
+      setNewLabelInput('');
+      setSelectedMaskEdges(null);
+  
+      // If there are remaining images, fetch the new current image
+      if (images.length > 1) {
+        const newIndex = currentImageIndex >= images.length - 1 ? currentImageIndex - 1 : currentImageIndex;
+        await fetchFullSizeImage(images[newIndex].id);
+      }
+  
+      console.log('Image deleted successfully');
+    } catch (error) {
+      console.error('Error deleting image:', error);
+    }
+  };
 
 
   const toggleSegmentsVisibility = () => {
@@ -320,11 +383,19 @@ const SAMSegmentationUI = () => {
           };
           edgesImg.src = `data:image/png;base64,${selectedMaskEdges}`;
         }
-  
+        if (isPaintBrushActive && paintMask) {
+          const paintCanvas = paintCanvasRef.current;
+          if (paintCanvas) {
+            ctx.save();
+            ctx.globalAlpha = 0.5;
+            ctx.drawImage(paintCanvas, 0, 0, canvas.width, canvas.height);
+            ctx.restore();
+          }
+        }
         resolve();
       };
     });
-  }, [currentFullSizeImage, zoom, pan, showAllSegments, currentMask, maskColor, maskOpacity, points, editingPoints, selectedMaskIndex, selectedMaskEdges, isEditingMask, images, currentImageIndex]);
+  }, [currentFullSizeImage, zoom, pan, showAllSegments, currentMask, maskColor, maskOpacity, points, editingPoints, selectedMaskIndex, selectedMaskEdges, isEditingMask, images, currentImageIndex, isPaintBrushActive, paintMask]);
 
 
   const debouncedDrawCanvas = useCallback(
@@ -535,7 +606,11 @@ const SAMSegmentationUI = () => {
   };
   
   const handleWheel = useCallback((e) => {
-    //e.preventDefault();
+    if (e.ctrlKey) {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -1 : 1;
+      setPaintBrushSize(prevSize => Math.max(1, Math.min(100, prevSize + delta)));
+    } else {
     const rect = canvasRef.current.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
@@ -557,18 +632,45 @@ const SAMSegmentationUI = () => {
       setZoom(newZoom);
       setPan(newPan);
     });
+  }
   }, [zoom, pan]);
 
-  const handleMouseDown = (e) => {
-    if (e.button === 1) {
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (canvas) {
+      canvas.addEventListener('wheel', handleWheel);
+      return () => canvas.removeEventListener('wheel', handleWheel);
+    }
+  }, [handleWheel]);
+
+  const initializePaintCanvas = () => {
+    const canvas = canvasRef.current;
+    const paintCanvas = paintCanvasRef.current;
+    if (canvas && paintCanvas) {
+      paintCanvas.width = canvas.width;
+      paintCanvas.height = canvas.height;
+      const ctx = paintCanvas.getContext('2d');
+      ctx.clearRect(0, 0, paintCanvas.width, paintCanvas.height);
+    }
+  };
+
+  const handleCanvasMouseDown = (e) => {
+    if (e.button === 0 && isPaintBrushActive && (isSegmenting || isEditingMask)) {
+      setIsPainting(true);
+      const { x, y } = getCanvasCoordinates(e);
+      paint(x, y);
+    } else if (e.button === 1) {
       e.preventDefault();
       setIsPanning(true);
       setLastPanPoint({ x: e.clientX, y: e.clientY });
     }
   };
 
-  const handleMouseMove = useCallback((e) => {
-    if (isPanning) {
+  const handleCanvasMouseMove = (e) => {
+    if (isPainting && isPaintBrushActive && (isSegmenting || isEditingMask)) {
+      const { x, y } = getCanvasCoordinates(e);
+      paint(x, y);
+    } else if (isPanning) {
       const deltaX = e.clientX - lastPanPoint.x;
       const deltaY = e.clientY - lastPanPoint.y;
       
@@ -580,8 +682,16 @@ const SAMSegmentationUI = () => {
         setLastPanPoint({ x: e.clientX, y: e.clientY });
       });
     }
-  }, [isPanning, lastPanPoint]);
-  
+  };
+
+  const handleCanvasMouseUp = (e) => {
+    if (e.button === 0) {
+      setIsPainting(false);
+    } else if (e.button === 1) {
+      setIsPanning(false);
+    }
+  };
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas) {
@@ -591,14 +701,86 @@ const SAMSegmentationUI = () => {
     }
   }, []);
 
-  const handleMouseUp = (e) => {
-    if (e.button === 1) {
-      setIsPanning(false);
+  const handleMouseLeave = () => {
+    setIsPanning(false);
+  };
+
+  const paint = (x, y) => {
+    const paintCanvas = paintCanvasRef.current;
+    if (paintCanvas) {
+      const ctx = paintCanvas.getContext('2d');
+      ctx.save();
+      ctx.translate(pan.x, pan.y);
+      ctx.scale(zoom, zoom);
+      ctx.beginPath();
+      ctx.arc(x, y, paintBrushSize / (2 * zoom), 0, 2 * Math.PI);
+      ctx.fillStyle = paintBrushMode === 'add' ? 'white' : 'black';
+      ctx.fill();
+      ctx.restore();
+      updatePaintMask();
     }
   };
 
-  const handleMouseLeave = () => {
-    setIsPanning(false);
+  const updatePaintMask = () => {
+    const paintCanvas = paintCanvasRef.current;
+    if (paintCanvas) {
+      const ctx = paintCanvas.getContext('2d');
+      const imageData = ctx.getImageData(0, 0, paintCanvas.width, paintCanvas.height);
+      const mask = new Uint8Array(imageData.data.length / 4);
+      for (let i = 0; i < imageData.data.length; i += 4) {
+        mask[i / 4] = imageData.data[i] > 0 ? 1 : 0;
+      }
+      setPaintMask(mask);
+    }
+  };
+
+
+  const applyPaintMask = () => {
+    if (paintMask && (isSegmenting || isEditingMask)) {
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d');
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+  
+      for (let i = 0; i < paintMask.length; i++) {
+        const pixelIndex = i * 4;
+        if (paintBrushMode === 'add') {
+          data[pixelIndex] |= paintMask[i];
+          data[pixelIndex + 1] |= paintMask[i];
+          data[pixelIndex + 2] |= paintMask[i];
+        } else {
+          data[pixelIndex] &= (1 - paintMask[i]);
+          data[pixelIndex + 1] &= (1 - paintMask[i]);
+          data[pixelIndex + 2] &= (1 - paintMask[i]);
+        }
+      }
+  
+      ctx.putImageData(imageData, 0, 0);
+      setCurrentMask(data);
+      initializePaintCanvas();
+      setPaintMask(null);
+      drawCanvas();
+    }
+  };
+
+  const togglePaintBrush = () => {
+    if (isSegmenting || isEditingMask) {
+      setIsPaintBrushActive(!isPaintBrushActive);
+      if (!isPaintBrushActive) {
+        initializePaintCanvas();
+      }
+    }
+  };
+
+  const getCanvasCoordinates = (e) => {
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY
+    };
   };
 
   const handleNewLabel = async () => {
@@ -1097,6 +1279,29 @@ const handleSaveSegment = async () => {
             Random Color
           </Button>
         </div>
+
+        <Button onClick={() => fileInputRef.current.click()} disabled={isSegmenting || isEditingMask} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
+    <Upload className="mr-2 h-4 w-4" /> Load Images
+  </Button>
+
+  <input
+    type="file"
+    ref={fileInputRef}
+    onChange={handleFileChange}
+    accept="image/*"
+    multiple
+    className="hidden"
+  />
+
+  {images.length > 0 && (
+    <Button 
+      onClick={() => deleteImage(images[currentImageIndex].id)} 
+      disabled={isSegmenting || isEditingMask}
+      className="bg-red-600 hover:bg-red-700 text-white"
+    >
+      <Trash2 className="mr-2 h-4 w-4" /> Delete Image
+    </Button>
+  )}
   
         <div className="flex flex-col space-y-2">
           <span className="text-sm">Mask Opacity:</span>
@@ -1108,6 +1313,46 @@ const handleSaveSegment = async () => {
             step={0.01}
             className="w-full"
           />
+        {(isSegmenting || isEditingMask) && (
+          <>
+            <Button 
+              onClick={togglePaintBrush} 
+              className={`bg-gray-700 hover:bg-gray-600 text-white border ${isPaintBrushActive ? 'border-green-500' : 'border-blue-500'}`}
+            >
+              <Brush className="mr-2 h-4 w-4" /> {isPaintBrushActive ? 'Disable' : 'Enable'} Paint Brush
+            </Button>
+
+            {isPaintBrushActive && (
+              <>
+                <Select value={paintBrushMode} onValueChange={setPaintBrushMode}>
+                  <SelectTrigger className="w-full bg-gray-700 text-white border-blue-500">
+                    <SelectValue placeholder="Paint Brush Mode" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-gray-700 text-white">
+                    <SelectItem value="add">Add Regions</SelectItem>
+                    <SelectItem value="remove">Remove Regions</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <div className="flex flex-col space-y-2">
+                  <span className="text-sm">Brush Size: {paintBrushSize}</span>
+                  <Slider
+                    value={[paintBrushSize]}
+                    onValueChange={([value]) => setPaintBrushSize(value)}
+                    min={1}
+                    max={100}
+                    step={1}
+                    className="w-full"
+                  />
+                </div>
+
+                <Button onClick={applyPaintMask} disabled={!paintMask} className="bg-green-600 hover:bg-green-700 text-white">
+                  Apply Paint Mask
+                </Button>
+              </>
+            )}
+          </>
+        )}
         </div>
   
         {isLoading && <span className="text-white">Generating mask...</span>}
@@ -1115,32 +1360,38 @@ const handleSaveSegment = async () => {
   
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col bg-gray-900 relative">
-        {/* Navigation Controls */}
-        <div className="flex justify-between items-center p-4">
-          <Button onClick={handlePrevImage} disabled={currentImageIndex === 0 || isSegmenting || isEditingMask} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
-            <ChevronLeft className="mr-2 h-4 w-4" /> Previous Image
-          </Button>
-          <span className="text-lg font-semibold text-white">
-            Image {currentImageIndex + 1} of {images.length}
-          </span>
-          <Button onClick={handleNextImage} disabled={currentImageIndex === images.length - 1 || isSegmenting || isEditingMask} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
-            Next Image <ChevronRight className="ml-2 h-4 w-4" />
-          </Button>
-        </div>
+  {/* Navigation Controls */}
+  <div className="flex justify-between items-center p-4">
+    <Button onClick={handlePrevImage} disabled={currentImageIndex === 0 || isSegmenting || isEditingMask} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
+      <ChevronLeft className="mr-2 h-4 w-4" /> Previous Image
+    </Button>
+    <span className="text-lg font-semibold text-white">
+      Image {currentImageIndex + 1} of {images.length}
+    </span>
+    <Button onClick={handleNextImage} disabled={currentImageIndex === images.length - 1 || isSegmenting || isEditingMask} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
+      Next Image <ChevronRight className="ml-2 h-4 w-4" />
+    </Button>
+  </div>
+
   
-        {/* Canvas */}
-        <div className="flex-1 flex items-center justify-center p-4">
+       {/* Canvas */}
+       <div className="flex-1 flex items-center justify-center p-4 relative">
           <canvas
             ref={canvasRef}
-            width={800}
-            height={600}
+            width={1000}
+            height={800}
             onClick={handleCanvasClick}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
+            onMouseDown={handleCanvasMouseDown}
+            onMouseMove={handleCanvasMouseMove}
+            onMouseUp={handleCanvasMouseUp}
             onMouseLeave={handleMouseLeave}
-            onWheel={handleWheel}
             className="border border-gray-600 bg-black max-w-full max-h-full"
+          />
+          <canvas
+            ref={paintCanvasRef}
+            width={1000}
+            height={800}
+            className="absolute top-0 left-0 pointer-events-none"
           />
         </div>
       </div>

@@ -15,6 +15,8 @@ import base64
 import numpy as np
 from PIL import Image
 import io
+import pymongo
+import uvicorn
 
 app = FastAPI()
 
@@ -48,6 +50,17 @@ class UpdateMaskLabel(BaseModel):
 class DeleteMask(BaseModel):
     image_id: str
     mask_index: int
+
+def mongoConnect(file):
+    f = open(file, 'r')
+    cluster = f.read()
+    try:
+        client = pymongo.MongoClient(cluster)
+        return client
+    except Exception:
+        return None
+    
+file = 'C:\\Users\\jtruj\\projects\\mongoSecrets.txt'
 
 @app.post("/update_mask")
 async def update_mask(
@@ -302,6 +315,19 @@ async def save_mask(
 async def get_masks(image_id: str):
     return saved_masks.get(image_id, [])
 
+@app.delete("/delete_image/{image_id}")
+async def delete_image(image_id: str):
+    if image_id in uploaded_images:
+        del uploaded_images[image_id]
+        if image_id in saved_masks:
+            del saved_masks[image_id]
+        return {"message": "Image deleted successfully"}
+    else:
+        return JSONResponse({"error": "Image not found"}, status_code=404)
+
 if __name__ == "__main__":
-    import uvicorn
+    client = mongoConnect(file)
+
+    if client is None:
+        print("cannot connect to network, check wifi connection")
     uvicorn.run(app, host="localhost", port=8000)
