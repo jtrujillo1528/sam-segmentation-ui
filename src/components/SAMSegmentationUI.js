@@ -16,8 +16,8 @@ import { useRouter } from 'next/navigation';
 //yolov8 mask format output
 //add un-do feature for mask editing
 //fix scrolling and panning on canvas
-//integrate mongoDB database
-//allow for user log-in and project definition
+//project workflow
+//create new users functionality
 
 const SAMSegmentationUI = () => {
   const router = useRouter();

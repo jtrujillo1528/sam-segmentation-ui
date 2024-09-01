@@ -21,6 +21,7 @@ from PIL import Image
 import io
 import pymongo
 import uvicorn
+import bcrypt
 
 app = FastAPI()
 
@@ -62,13 +63,6 @@ class DeleteMask(BaseModel):
     image_id: str
     mask_index: int
 
-fake_users_db = {
-    "testuser": {
-        "username": "testuser",
-        "hashed_password": "$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW",  # "secret"
-    }
-}
-
 def mongoConnect(file):
     f = open(file, 'r')
     cluster = f.read()
@@ -90,19 +84,19 @@ def create_access_token(data: dict):
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
 
-def get_user(db, username: str):
-    if username in db:
-        user_dict = db[username]
-        return user_dict
-    return None
-
-def authenticate_user(fake_db, username: str, password: str):
-    user = get_user(fake_db, username)
-    if not user:
-        return False
-    if not verify_password(password, user["hashed_password"]):
-        return False
-    return user
+def get_user(collection, userName: str):
+    try:
+        user = collection.find({"userName": userName})
+        for item in user:
+            salt = item.get('salt')
+            password = item.get('password')
+        user = {
+            'userName': userName,
+            'password': password,
+        }
+        return user
+    except: 
+                return JSONResponse({"error": "user not found"}, status_code=404)
 
 def get_current_user(token: str = Depends(oauth2_scheme)):
     credentials_exception = HTTPException(
@@ -123,11 +117,20 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
 
 @app.post("/token")
 async def login(username: str = Form(...), password: str = Form(...)):
-    user = authenticate_user(fake_users_db, username, password)
+    db = client.telescope
+    users = db.users
+    user = get_user(users, username) 
+    convertedPassword = bytes(password, 'utf-8')
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
+            detail="Incorrect username",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if not bcrypt.checkpw(convertedPassword,user['password']):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username",
             headers={"WWW-Authenticate": "Bearer"},
         )
     access_token = create_access_token(data={"sub": username})
