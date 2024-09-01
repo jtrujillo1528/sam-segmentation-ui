@@ -7,6 +7,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { Slider } from "./ui/slider";
 import { debounce } from 'lodash';
+import api from './api';
+import { useNavigate } from 'react-router-dom';
+import { useRouter } from 'next/router';
 
 
 //to do list
@@ -18,6 +21,8 @@ import { debounce } from 'lodash';
 //allow for user log-in and project definition
 
 const SAMSegmentationUI = () => {
+  const navigate = useNavigate();
+  const router = useRouter();
   const [projectName, setProjectName] = useState('');
   const [projectID, setProjectID] = useState('');
   const [labels, setLabels] = useState([]);
@@ -118,7 +123,11 @@ const SAMSegmentationUI = () => {
     }
   }, [currentLabel]);
 
-
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    setIsAuthenticated(false);
+    navigate('/login');
+  };
 
   const saveLabelsToBackend = async (labelsList) => {
     try {
@@ -1354,6 +1363,16 @@ const handleSaveSegment = async () => {
           </>
         )}
         </div>
+        <div className="flex-grow"></div>
+
+        {/* Logout button */}
+        <Button 
+          onClick={handleLogout} 
+          className="bg-red-600 hover:bg-red-700 text-white w-full mt-auto"
+        >
+          <LogOut className="mr-2 h-4 w-4" /> Logout
+        </Button>
+
   
         {isLoading && <span className="text-white">Generating mask...</span>}
       </div>

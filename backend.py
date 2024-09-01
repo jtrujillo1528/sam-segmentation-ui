@@ -1,6 +1,10 @@
-from fastapi import FastAPI, File, UploadFile, Form
+from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+from datetime import datetime, timedelta
 from pydantic import BaseModel
 from typing import List, Dict
 import json
@@ -19,6 +23,13 @@ import pymongo
 import uvicorn
 
 app = FastAPI()
+
+SECRET_KEY = "your-secret-key"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
 
@@ -61,6 +72,41 @@ def mongoConnect(file):
         return None
     
 file = 'C:\\Users\\jtruj\\projects\\mongoSecrets.txt'
+
+def create_access_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+def get_current_user(token: str = Depends(oauth2_scheme)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+    # Here you would typically fetch the user from the database
+    # and return a user object
+    return {"username": username}
+
+@app.post("/token")
+async def login(username: str, password: str):
+    # Verify username and password
+    # If valid, create and return a token
+    access_token = create_access_token(data={"sub": username})
+    return {"access_token": access_token, "token_type": "bearer"}
+
+@app.get("/protected-route")
+async def protected_route(current_user: dict = Depends(get_current_user)):
+    return {"message": "This is a protected route", "user": current_user}
 
 @app.post("/update_mask")
 async def update_mask(
@@ -256,25 +302,6 @@ async def get_mask_data(mask_index: int = Form(...), image_id: str = Form(...)):
     else:
         return JSONResponse({"error": "Mask not found"}, status_code=404)
 
-
-
-# convert_to_yolo function remains the same
-
-def convert_to_yolo(mask, image_shape):
-    # Implement conversion from mask to YOLOv8 format
-    # This is a placeholder function - you'll need to implement the actual conversion
-    contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
-    yolo_annotations = []
-    for contour in contours:
-        x, y, w, h = cv2.boundingRect(contour)
-        center_x = (x + w/2) / image_shape[1]
-        center_y = (y + h/2) / image_shape[0]
-        width = w / image_shape[1]
-        height = h / image_shape[0]
-        yolo_annotations.append(f"0 {center_x} {center_y} {width} {height}")
-    
-    return yolo_annotations
 
 class MaskData(BaseModel):
     label: str
