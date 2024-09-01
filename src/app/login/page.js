@@ -16,7 +16,10 @@ const LoginPage = () => {
     e.preventDefault();
     setError('');
     try {
-      const response = await api.post('/token', { username, password });
+      const formData = new FormData();
+      formData.append('username', username);
+      formData.append('password', password);
+      const response = await api.post('/token', formData);
       localStorage.setItem('token', response.data.access_token);
       router.push('/segmentation');
     } catch (error) {

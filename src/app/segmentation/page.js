@@ -1,6 +1,6 @@
 import dynamic from 'next/dynamic'
 
-const SAMSegmentationUI = dynamic(() => import('../components/SAMSegmentationUI'), { ssr: false })
+const SAMSegmentationUI = dynamic(() => import('../../components/SAMSegmentationUI'), { ssr: false })
 
 export default function Home() {
   return (

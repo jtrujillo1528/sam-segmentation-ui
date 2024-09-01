@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Plus, Minus, Tag, Upload, Save, Eye, EyeOff, ChevronLeft, ChevronRight, Edit, X, Brush, Trash2 } from 'lucide-react';
+import { Plus, Minus, Tag, Upload, Save, Eye, EyeOff, ChevronLeft, ChevronRight, Edit, X, Brush, Trash2, LogOut } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
@@ -8,8 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Slider } from "./ui/slider";
 import { debounce } from 'lodash';
 import api from './api';
-import { useNavigate } from 'react-router-dom';
-import { useRouter } from 'next/router';
+import { useRouter } from 'next/navigation';
 
 
 //to do list
@@ -21,7 +20,6 @@ import { useRouter } from 'next/router';
 //allow for user log-in and project definition
 
 const SAMSegmentationUI = () => {
-  const navigate = useNavigate();
   const router = useRouter();
   const [projectName, setProjectName] = useState('');
   const [projectID, setProjectID] = useState('');
@@ -56,6 +54,7 @@ const SAMSegmentationUI = () => {
   const [paintBrushMode, setPaintBrushMode] = useState('add');
   const [paintMask, setPaintMask] = useState(null);
   const [isPainting, setIsPainting] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(true);
 
   const canvasRef = useRef(null);
   const paintCanvasRef = useRef(null);
@@ -126,7 +125,7 @@ const SAMSegmentationUI = () => {
   const handleLogout = () => {
     localStorage.removeItem('token');
     setIsAuthenticated(false);
-    navigate('/login');
+    router.push('/login');
   };
 
   const saveLabelsToBackend = async (labelsList) => {
