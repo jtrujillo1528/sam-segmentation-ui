@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '../../components/api';
 import { Button } from '../../components/ui/button';
@@ -13,17 +13,47 @@ const RegisterPage = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
+  const [emailError, setEmailError] = useState('');
   const router = useRouter();
+
+  const validateEmail = (email) => {
+    const re = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}$/;
+    return re.test(email);
+  };
+
+  const handleEmailChange = (e) => {
+    const newEmail = e.target.value;
+    setEmail(newEmail);
+    if (!validateEmail(newEmail)) {
+      setEmailError('Please enter a valid email address');
+    } else {
+      setEmailError('');
+    }
+  };
+
+  useEffect(() => {
+    let timer;
+    if (email) {
+      timer = setTimeout(() => {
+        if (!validateEmail(email)) {
+          setEmailError('Please enter a valid email address');
+        } else {
+          setEmailError('');
+        }
+      }, 1000); // Delay of 1 second
+    }
+    return () => clearTimeout(timer);
+  }, [email]);
 
   const handleRegister = async (e) => {
     e.preventDefault();
     setError('');
-
+  
     if (password !== confirmPassword) {
       setError("Passwords don't match");
       return;
     }
-
+  
     try {
       const formData = new FormData();
       formData.append('username', username);
@@ -34,7 +64,11 @@ const RegisterPage = () => {
       router.push('/segmentation');
     } catch (error) {
       console.error('Registration failed:', error);
-      setError('Registration failed. Please try again.');
+      if (error.response && error.response.data && error.response.data.detail) {
+        setError(error.response.data.detail);
+      } else {
+        setError('Registration failed. Please try again.');
+      }
     }
   };
 
@@ -72,11 +106,12 @@ const RegisterPage = () => {
                 name="email"
                 type="email"
                 required
-                className="bg-gray-700 text-white border-blue-500"
+                className={`bg-gray-700 text-white ${emailError ? 'border-red-500' : 'border-blue-500'}`}
                 placeholder="Email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={handleEmailChange}
               />
+              {emailError && <p className="text-red-500 text-sm mt-1">{emailError}</p>}
             </div>
             <div>
               <label htmlFor="password" className="sr-only">
@@ -118,6 +153,7 @@ const RegisterPage = () => {
             <Button
               type="submit"
               className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+              disabled={!!emailError}
             >
               Register
             </Button>

@@ -22,6 +22,7 @@ import io
 import pymongo
 import uvicorn
 import bcrypt
+from email_validator import validate_email, EmailNotValidError
 
 app = FastAPI()
 
@@ -125,6 +126,17 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
     # and return a user object
     return {"username": username}
 
+def validate_email_address(email: str):
+    try:
+        # Validate and get info
+        v = validate_email(email)
+        # Replace with normalized form
+        email = v["email"]
+        return email
+    except EmailNotValidError as e:
+        # Email is not valid, exception message is human-readable
+        raise HTTPException(status_code=400, detail=str(e))
+
 @app.post("/token")
 async def login(username: str = Form(...), password: str = Form(...)):
     db = client.telescope
@@ -148,17 +160,38 @@ async def login(username: str = Form(...), password: str = Form(...)):
 
 @app.post("/new_user")
 async def add_new_user(username: str = Form(...), password: str = Form(...), email: str = Form(...)):
-    db = client.telescope
-    users = db.users
-    password_bytes  = bytes(password,'utf-8')
-    salt = bcrypt.gensalt()
-    hashed_password = bcrypt.hashpw(password_bytes, salt)
-    user_file = {'userName': username,
-                 'password': hashed_password,
-                 'email': email}
-    addFile(user_file,users)
-    access_token = create_access_token(data={"sub": username})
-    return {"access_token": access_token, "token_type": "bearer"}
+    try:
+        # Validate email
+        validated_email = validate_email_address(email)
+        
+        db = client.telescope
+        users = db.users
+        
+        # Check if username already exists
+        existing_user = users.find_one({"userName": username})
+        if existing_user:
+            raise HTTPException(status_code=400, detail="Username already exists")
+        
+        # Check if email already exists
+        existing_email = users.find_one({"email": validated_email})
+        if existing_email:
+            raise HTTPException(status_code=400, detail="Email already in use")
+        
+        password_bytes  = bytes(password,'utf-8')
+        salt = bcrypt.gensalt()
+        hashed_password = bcrypt.hashpw(password_bytes, salt)
+        user_file = {
+            'userName': username,
+            'password': hashed_password,
+            'email': validated_email
+        }
+        addFile(user_file, users)
+        access_token = create_access_token(data={"sub": username})
+        return {"access_token": access_token, "token_type": "bearer"}
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="An error occurred during registration")
 
 @app.get("/protected-route")
 async def protected_route(current_user: dict = Depends(get_current_user)):
