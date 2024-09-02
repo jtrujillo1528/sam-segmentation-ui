@@ -22,7 +22,7 @@ const LoginPage = () => {
       formData.append('password', password);
       const response = await api.post('/token', formData);
       localStorage.setItem('token', response.data.access_token);
-      router.push('/segmentation');
+      router.push('/home');
     } catch (error) {
       console.error('Login failed:', error);
       setError('Login failed. Please check your credentials.');

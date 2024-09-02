@@ -23,6 +23,8 @@ import pymongo
 import uvicorn
 import bcrypt
 from email_validator import validate_email, EmailNotValidError
+from pydantic import BaseModel
+from typing import List
 
 app = FastAPI()
 
@@ -63,6 +65,14 @@ class UpdateMaskLabel(BaseModel):
 class DeleteMask(BaseModel):
     image_id: str
     mask_index: int
+
+class ProjectCreate(BaseModel):
+    name: str
+    description: str
+
+class Project(ProjectCreate):
+    id: str
+    owner: str
 
 def mongoConnect(file):
     f = open(file, 'r')
@@ -196,6 +206,36 @@ async def add_new_user(username: str = Form(...), password: str = Form(...), ema
 @app.get("/protected-route")
 async def protected_route(current_user: dict = Depends(get_current_user)):
     return {"message": "This is a protected route", "user": current_user}
+
+@app.post("/projects", response_model=Project)
+async def create_project(project: ProjectCreate, current_user: dict = Depends(get_current_user)):
+    new_project = {
+        "name": project.name,
+        "description": project.description,
+        "owner": current_user["username"]
+    }
+    # Save the project to your database here
+    return new_project
+
+@app.get("/projects", response_model=List[Project])
+async def get_projects(current_user: dict = Depends(get_current_user)):
+    # Fetch projects from your database here
+    # This is a placeholder implementation
+    projects = [
+        {
+            "id": "1",
+            "name": "Sample Project 1",
+            "description": "This is a sample project",
+            "owner": current_user["username"]
+        },
+        {
+            "id": "2",
+            "name": "Sample Project 2",
+            "description": "This is another sample project",
+            "owner": current_user["username"]
+        }
+    ]
+    return projects
 
 @app.post("/update_mask")
 async def update_mask(

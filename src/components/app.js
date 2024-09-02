@@ -1,19 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
-import LoginPage from './logInPage';
-import SAMSegmentationUI from './SAMSegmentationUI';
+import LoginPage from './components/LoginPage';
+import RegisterPage from './components/RegisterPage';
+import HomePage from './components/HomePage';
+import SAMSegmentationUI from './components/SAMSegmentationUI';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    // Check if a token exists in localStorage
     const token = localStorage.getItem('token');
     if (token) {
       setIsAuthenticated(true);
     }
   }, []);
-
 
   return (
     <Router>
@@ -22,7 +22,7 @@ function App() {
           path="/login" 
           element={
             isAuthenticated ? 
-            <Navigate to="/segmentation" replace /> : 
+            <Navigate to="/home" replace /> : 
             <LoginPage setIsAuthenticated={setIsAuthenticated} />
           } 
         />
@@ -30,26 +30,33 @@ function App() {
           path="/register" 
           element={
             isAuthenticated ? 
-            <Navigate to="/segmentation" replace /> : 
+            <Navigate to="/home" replace /> : 
             <RegisterPage setIsAuthenticated={setIsAuthenticated} />
+          } 
+        />
+        <Route 
+          path="/home" 
+          element={
+            isAuthenticated ? 
+            <HomePage /> : 
+            <Navigate to="/login" replace />
           } 
         />
         <Route 
           path="/segmentation" 
           element={
             isAuthenticated ? 
-            <SAMSegmentationUI setIsAuthenticated={setIsAuthenticated} /> : 
+            <SAMSegmentationUI /> : 
             <Navigate to="/login" replace />
           } 
         />
         <Route 
           path="/" 
-          element={<Navigate to={isAuthenticated ? "/segmentation" : "/login"} replace />} 
+          element={<Navigate to={isAuthenticated ? "/home" : "/login"} replace />} 
         />
       </Routes>
     </Router>
   );
-
 }
 
 export default App;
