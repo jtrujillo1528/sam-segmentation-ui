@@ -1288,19 +1288,6 @@ const handleSaveSegment = async () => {
           </Button>
         </div>
 
-        <Button onClick={() => fileInputRef.current.click()} disabled={isSegmenting || isEditingMask} className="bg-gray-700 hover:bg-gray-600 text-white border border-blue-500">
-    <Upload className="mr-2 h-4 w-4" /> Load Images
-  </Button>
-
-  <input
-    type="file"
-    ref={fileInputRef}
-    onChange={handleFileChange}
-    accept="image/*"
-    multiple
-    className="hidden"
-  />
-
   {images.length > 0 && (
     <Button 
       onClick={() => deleteImage(images[currentImageIndex].id)} 

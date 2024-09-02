@@ -96,7 +96,14 @@ def get_user(collection, userName: str):
         }
         return user
     except: 
-                return JSONResponse({"error": "user not found"}, status_code=404)
+        return JSONResponse({"error": "user not found"}, status_code=404)
+    
+def addFile(info, collection):
+    try: 
+        file = collection.insert_one(info)
+        return file.inserted_id
+    except: 
+        return JSONResponse({"error": "unable to access database"}, status_code=404)
 
 def get_current_user(token: str = Depends(oauth2_scheme)):
     credentials_exception = HTTPException(
@@ -107,7 +114,10 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
-        if username is None:
+        db = client.telescope
+        users = db.users
+        user = get_user(users, username) 
+        if user is None:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
@@ -130,9 +140,23 @@ async def login(username: str = Form(...), password: str = Form(...)):
     if not bcrypt.checkpw(convertedPassword,user['password']):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username",
+            detail="Incorrect password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    access_token = create_access_token(data={"sub": username})
+    return {"access_token": access_token, "token_type": "bearer"}
+
+@app.post("/new_user")
+async def add_new_user(username: str = Form(...), password: str = Form(...), email: str = Form(...)):
+    db = client.telescope
+    users = db.users
+    password_bytes  = bytes(password,'utf-8')
+    salt = bcrypt.gensalt()
+    hashed_password = bcrypt.hashpw(password_bytes, salt)
+    user_file = {'userName': username,
+                 'password': hashed_password,
+                 'email': email}
+    addFile(user_file,users)
     access_token = create_access_token(data={"sub": username})
     return {"access_token": access_token, "token_type": "bearer"}
 

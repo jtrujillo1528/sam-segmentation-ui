@@ -14,6 +14,7 @@ function App() {
     }
   }, []);
 
+
   return (
     <Router>
       <Routes>
@@ -23,6 +24,14 @@ function App() {
             isAuthenticated ? 
             <Navigate to="/segmentation" replace /> : 
             <LoginPage setIsAuthenticated={setIsAuthenticated} />
+          } 
+        />
+        <Route 
+          path="/register" 
+          element={
+            isAuthenticated ? 
+            <Navigate to="/segmentation" replace /> : 
+            <RegisterPage setIsAuthenticated={setIsAuthenticated} />
           } 
         />
         <Route 
@@ -40,6 +49,7 @@ function App() {
       </Routes>
     </Router>
   );
+
 }
 
 export default App;

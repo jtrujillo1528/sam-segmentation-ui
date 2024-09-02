@@ -7,25 +7,34 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import Link from 'next/link';
 
-const LoginPage = () => {
+const RegisterPage = () => {
   const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const router = useRouter();
 
-  const handleLogin = async (e) => {
+  const handleRegister = async (e) => {
     e.preventDefault();
     setError('');
+
+    if (password !== confirmPassword) {
+      setError("Passwords don't match");
+      return;
+    }
+
     try {
       const formData = new FormData();
       formData.append('username', username);
       formData.append('password', password);
-      const response = await api.post('/token', formData);
+      formData.append('email', email);
+      const response = await api.post('/new_user', formData);
       localStorage.setItem('token', response.data.access_token);
       router.push('/segmentation');
     } catch (error) {
-      console.error('Login failed:', error);
-      setError('Login failed. Please check your credentials.');
+      console.error('Registration failed:', error);
+      setError('Registration failed. Please try again.');
     }
   };
 
@@ -34,10 +43,10 @@ const LoginPage = () => {
       <div className="w-full max-w-md space-y-8 rounded-xl bg-gray-800 p-10 shadow-2xl">
         <div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-white">
-            Sign in to your account
+            Create a new account
           </h2>
         </div>
-        <form className="mt-8 space-y-6" onSubmit={handleLogin}>
+        <form className="mt-8 space-y-6" onSubmit={handleRegister}>
           <div className="rounded-md shadow-sm space-y-4">
             <div>
               <label htmlFor="username" className="sr-only">
@@ -55,6 +64,21 @@ const LoginPage = () => {
               />
             </div>
             <div>
+              <label htmlFor="email" className="sr-only">
+                Email
+              </label>
+              <Input
+                id="email"
+                name="email"
+                type="email"
+                required
+                className="bg-gray-700 text-white border-blue-500"
+                placeholder="Email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
+            <div>
               <label htmlFor="password" className="sr-only">
                 Password
               </label>
@@ -69,6 +93,21 @@ const LoginPage = () => {
                 onChange={(e) => setPassword(e.target.value)}
               />
             </div>
+            <div>
+              <label htmlFor="confirmPassword" className="sr-only">
+                Confirm Password
+              </label>
+              <Input
+                id="confirmPassword"
+                name="confirmPassword"
+                type="password"
+                required
+                className="bg-gray-700 text-white border-blue-500"
+                placeholder="Confirm Password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+              />
+            </div>
           </div>
 
           {error && (
@@ -80,13 +119,13 @@ const LoginPage = () => {
               type="submit"
               className="w-full bg-blue-600 hover:bg-blue-700 text-white"
             >
-              Sign in
+              Register
             </Button>
           </div>
         </form>
-        <div className="text-center mt-4">
-          <Link href="/register" className="text-blue-500 hover:text-blue-400">
-            Don't have an account? Create one
+        <div className="text-center">
+          <Link href="/login" className="text-blue-500 hover:text-blue-400">
+            Already have an account? Sign in
           </Link>
         </div>
       </div>
@@ -94,4 +133,4 @@ const LoginPage = () => {
   );
 };
 
-export default LoginPage;
+export default RegisterPage;
