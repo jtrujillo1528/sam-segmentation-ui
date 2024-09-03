@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException, status
+from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException, status, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer
@@ -25,6 +25,8 @@ import bcrypt
 from email_validator import validate_email, EmailNotValidError
 from pydantic import BaseModel
 from typing import List
+from bson import ObjectId
+from bson.errors import InvalidId
 
 app = FastAPI()
 
@@ -36,6 +38,8 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+
+file = 'C:\\Users\\jtruj\\projects\\mongoSecrets.txt'
 
 # CORS configuration
 app.add_middleware(
@@ -81,10 +85,17 @@ def mongoConnect(file):
         client = pymongo.MongoClient(cluster)
         return client
     except Exception:
-        return None
+        return JSONResponse({"error": "cannot access database"}, status_code=404)
     
-file = 'C:\\Users\\jtruj\\projects\\mongoSecrets.txt'
+client = mongoConnect(file)
+db = client.telescope
 
+def pullData(field, value, collection):
+    try:
+        data = collection.find({field: value})
+        return data
+    except: 
+        return JSONResponse({"error": "cannot access database"}, status_code=404)
 def create_access_token(data: dict):
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -116,6 +127,7 @@ def addFile(info, collection):
     except: 
         return JSONResponse({"error": "unable to access database"}, status_code=404)
 
+
 def get_current_user(token: str = Depends(oauth2_scheme)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -125,7 +137,6 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
-        db = client.telescope
         users = db.users
         user = get_user(users, username) 
         if user is None:
@@ -149,7 +160,6 @@ def validate_email_address(email: str):
 
 @app.post("/token")
 async def login(username: str = Form(...), password: str = Form(...)):
-    db = client.telescope
     users = db.users
     user = get_user(users, username) 
     convertedPassword = bytes(password, 'utf-8')
@@ -173,10 +183,7 @@ async def add_new_user(username: str = Form(...), password: str = Form(...), ema
     try:
         # Validate email
         validated_email = validate_email_address(email)
-        
-        db = client.telescope
         users = db.users
-        
         # Check if username already exists
         existing_user = users.find_one({"userName": username})
         if existing_user:
@@ -209,33 +216,49 @@ async def protected_route(current_user: dict = Depends(get_current_user)):
 
 @app.post("/projects", response_model=Project)
 async def create_project(project: ProjectCreate, current_user: dict = Depends(get_current_user)):
+    projects = db.projects
     new_project = {
         "name": project.name,
         "description": project.description,
         "owner": current_user["username"]
     }
-    # Save the project to your database here
+    project_id = str(addFile(new_project,projects))
+    new_project.update({'id':project_id})
     return new_project
 
 @app.get("/projects", response_model=List[Project])
 async def get_projects(current_user: dict = Depends(get_current_user)):
-    # Fetch projects from your database here
-    # This is a placeholder implementation
-    projects = [
-        {
-            "id": "1",
-            "name": "Sample Project 1",
-            "description": "This is a sample project",
-            "owner": current_user["username"]
-        },
-        {
-            "id": "2",
-            "name": "Sample Project 2",
-            "description": "This is another sample project",
-            "owner": current_user["username"]
-        }
-    ]
-    return projects
+    projects = db.projects
+    try:
+        querry_response = pullData("owner",current_user["username"],projects)
+        projects = []
+        for project in querry_response:
+            temp = {
+                "id": str(project['_id']),
+                "name": project['name'],
+                "description": project['description'],
+                "owner": project['owner']
+            }
+            projects.append(temp)
+        return projects
+    except : return JSONResponse({"error": "unable to access projects"}, status_code=404)
+
+from fastapi import Body, HTTPException
+from bson.errors import InvalidId
+
+@app.post("/delete_project")
+async def delete_project(project_id: str = Body(...)):
+    try:
+        projects = db.projects
+        object_id = ObjectId(project_id)
+        print(object_id)
+        result = projects.delete_one({"_id": object_id})
+        if result.deleted_count == 1:
+            return {"message": "Project deleted successfully"}
+        else:
+            raise HTTPException(status_code=404, detail=f"Project with id {project_id} not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unable to delete project: {str(e)}")
 
 @app.post("/update_mask")
 async def update_mask(
@@ -482,8 +505,5 @@ async def delete_image(image_id: str):
         return JSONResponse({"error": "Image not found"}, status_code=404)
 
 if __name__ == "__main__":
-    client = mongoConnect(file)
-
-    if client is None:
-        print("cannot connect to network, check wifi connection")
+    print('running...')
     uvicorn.run(app, host="localhost", port=8000)
