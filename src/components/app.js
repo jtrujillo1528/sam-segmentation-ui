@@ -4,6 +4,7 @@ import LoginPage from './components/LoginPage';
 import RegisterPage from './components/RegisterPage';
 import HomePage from './components/HomePage';
 import SAMSegmentationUI from './components/SAMSegmentationUI';
+import ProjectPage from './components/ProjectPage';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -14,7 +15,6 @@ function App() {
       setIsAuthenticated(true);
     }
   }, []);
-
   return (
     <Router>
       <Routes>
@@ -43,7 +43,15 @@ function App() {
           } 
         />
         <Route 
-          path="/segmentation" 
+          path="/project/:projectId" 
+          element={
+            isAuthenticated ? 
+            <ProjectPage /> : 
+            <Navigate to="/login" replace />
+          } 
+        />
+        <Route 
+          path="/segmentation/:projectId" 
           element={
             isAuthenticated ? 
             <SAMSegmentationUI /> : 

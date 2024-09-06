@@ -1,4 +1,3 @@
-// pages/home.js or app/home/page.js
 import React from 'react';
 import dynamic from 'next/dynamic'
 

@@ -2,6 +2,7 @@ from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException, sta
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer
+from fastapi.staticfiles import StaticFiles
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
@@ -26,7 +27,7 @@ from email_validator import validate_email, EmailNotValidError
 from pydantic import BaseModel
 from typing import List
 from bson import ObjectId
-from bson.errors import InvalidId
+import boto3
 
 app = FastAPI()
 
@@ -39,7 +40,17 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
 
-file = 'C:\\Users\\jtruj\\projects\\mongoSecrets.txt'
+mongo_file = 'C:\\Users\\jtruj\\projects\\mongoSecrets.txt'
+s3_file = 'C:\\Users\\jtruj\\projects\\s3Secrets.txt'
+
+fileRead = open(s3_file, 'r')
+access = fileRead.read()
+
+s3 = boto3.client(
+    's3',
+    aws_access_key_id = '443370721298',
+    aws_secret_access_key = access)
+bucket_name = 'telescope-ui'
 
 # CORS configuration
 app.add_middleware(
@@ -87,7 +98,7 @@ def mongoConnect(file):
     except Exception:
         return JSONResponse({"error": "cannot access database"}, status_code=404)
     
-client = mongoConnect(file)
+client = mongoConnect(mongo_file)
 db = client.telescope
 
 def pullData(field, value, collection):
@@ -96,6 +107,26 @@ def pullData(field, value, collection):
         return data
     except: 
         return JSONResponse({"error": "cannot access database"}, status_code=404)
+    
+def upload_image_to_s3(file_data, file_name):
+    s3.put_object(Bucket=bucket_name, Key=file_name, Body=file_data)
+    return f"https://{bucket_name}.s3.amazonaws.com/{file_name}"
+
+def add_image_to_project(project_ID, image_data, image_name):
+    try:
+        # Upload image to S3
+        image_url = upload_image_to_s3(image_data, image_name)
+        images = db.images
+        # Create project in MongoDB
+        img = {
+            "project": project_ID,
+            "image": image_url,
+            "name": image_name
+        }
+        result = str(addFile(img,images))
+        return result
+    except: return JSONResponse({"error": "cannot upload image"}, status_code=404)
+
 def create_access_token(data: dict):
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -119,6 +150,23 @@ def get_user(collection, userName: str):
         return user
     except: 
         return JSONResponse({"error": "user not found"}, status_code=404)
+    
+def get_project(collection, projectId: str):
+    try:
+        objId = ObjectId(projectId)
+        proj = collection.find({"_id": objId})
+        for item in proj:
+            name = item.get('name')
+            description = item.get('description')
+        project = {
+            'name': name,
+            'description': description,
+        }
+
+        project.update({'id':projectId})
+        return project
+    except: 
+        return JSONResponse({"error": "project not found"}, status_code=404)
     
 def addFile(info, collection):
     try: 
@@ -259,6 +307,24 @@ async def delete_project(project_id: str = Body(...)):
             raise HTTPException(status_code=404, detail=f"Project with id {project_id} not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unable to delete project: {str(e)}")
+    
+@app.get("/project/{project_id}")
+async def find_project(project_id):
+    try:
+        projects = db.projects
+        result = get_project(projects,project_id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unable to find project: {str(e)}")
+
+@app.post("/upload-image/")
+async def upload_image(file: UploadFile = File(...), fileName: str = Form(...), project_id: str = Form(...)):
+    project_obj_id = ObjectId(project_id)
+    
+    # Save project with image reference to MongoDB
+    image_id = add_image_to_project(project_obj_id, file, fileName)
+    
+    return image_id
 
 @app.post("/update_mask")
 async def update_mask(

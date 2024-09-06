@@ -33,6 +33,7 @@ const HomePage = () => {
   };
 
   const handleProjectClick = (projectId) => {
+    console.log('Navigating to project:', projectId);
     router.push(`/project/${projectId}`);
   };
 
@@ -80,7 +81,11 @@ const HomePage = () => {
               onClick={() => handleProjectClick(project.id)}
             >
               <CardHeader>
-                <CardTitle>{project.name}</CardTitle>
+                <CardTitle>
+                  <a href={`/project/${project.id}`} onClick={(e) => e.stopPropagation()} className="text-blue-400 hover:underline">
+                    {project.name}
+                  </a>
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="text-gray-300">{project.description}</p>
