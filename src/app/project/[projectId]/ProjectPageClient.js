@@ -1,38 +1,23 @@
 "use client"
 
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import api from './api';
-import { Button } from './ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import api from '../../../components/api';
+import { Button } from '../../../components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
-const ProjectPage = () => {
+const ProjectPageClient = ({ projectId }) => {
     const router = useRouter();
     const [project, setProject] = useState(null);
     const [images, setImages] = useState([]);
+    const [isLoading, setIsLoading] = useState(true);
 
 
     useEffect(() => {
-        console.log('Router object:', router);
-        console.log('Router query:', router.query);
-        console.log('Router asPath:', router.asPath);
-        console.log('Router pathname:', router.pathname);
-
-        if (!router.isReady) return;
-
         const fetchProjectData = async () => {
             setIsLoading(true);
-            let projectId = router.query.projectId;
-
-            // If projectId is not in query, try to extract it from the path
-            if (!projectId && router.asPath) {
-                const pathParts = router.asPath.split('/');
-                projectId = pathParts[pathParts.length - 1];
-            }
-
-            console.log('Extracted projectId:', projectId);
-
+            
             if (!projectId) {
                 console.error('Project ID is undefined');
                 setIsLoading(false);
@@ -41,8 +26,8 @@ const ProjectPage = () => {
 
             try {
                 const [projectResponse, imagesResponse] = await Promise.all([
-                    api.get(`/projects/${projectId}`),
-                    api.get(`/projects/${projectId}/images`)
+                    api.get(`/project/${projectId}`),
+                    api.get(`/project/${projectId}/images`)
                 ]);
 
                 setProject(projectResponse.data);
@@ -56,7 +41,7 @@ const ProjectPage = () => {
         };
 
         fetchProjectData();
-    }, [router.isReady, router.query, router.asPath]);
+    }, [projectId]);
 
   const handleImageUpload = async (event) => {
     const file = event.target.files[0];
@@ -83,7 +68,13 @@ const ProjectPage = () => {
     }
   };
 
+  if (isLoading) {
+    return <div>Loading...</div>;
+}
 
+if (!project) {
+    return <div>Project not found</div>;
+}
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-8">
@@ -125,4 +116,4 @@ const ProjectPage = () => {
   );
 };
 
-export default ProjectPage;
+export default ProjectPageClient;
