@@ -28,6 +28,7 @@ from pydantic import BaseModel
 from typing import List
 from bson import ObjectId
 import boto3
+from botocore.exceptions import NoCredentialsError
 
 app = FastAPI()
 
@@ -42,15 +43,13 @@ ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",
 
 mongo_file = 'C:\\Users\\jtruj\\projects\\mongoSecrets.txt'
 s3_file = 'C:\\Users\\jtruj\\projects\\s3Secrets.txt'
+images_path = 'C:\\static\\images'
 
-fileRead = open(s3_file, 'r')
-access = fileRead.read()
+# Read the access point alias from the file
+with open(s3_file, 'r') as fileRead:
+    access_point_alias = fileRead.read().strip()
 
-s3 = boto3.client(
-    's3',
-    aws_access_key_id = '443370721298',
-    aws_secret_access_key = access)
-bucket_name = 'telescope-ui'
+s3 = boto3.client('s3')
 
 # CORS configuration
 app.add_middleware(
@@ -108,24 +107,66 @@ def pullData(field, value, collection):
     except: 
         return JSONResponse({"error": "cannot access database"}, status_code=404)
     
-def upload_image_to_s3(file_data, file_name):
-    s3.put_object(Bucket=bucket_name, Key=file_name, Body=file_data)
-    return f"https://{bucket_name}.s3.amazonaws.com/{file_name}"
+def upload_data_to_s3(file, file_name, file_type):
+    try:
+        file_id = str(uuid4())
+        file_key = 'data/' + file_id
+        if file_type == 'image': 
+            image_bytes = io.BytesIO()
+            file.save(image_bytes, format='JPEG')  
+            image_bytes.seek(0)  
+            body = image_bytes
+        else:
+            body = file
+        s3.put_object(Bucket=access_point_alias, Key=file_key, Body=body)
+        return {'file name': file_name, 'id': file_id}
+    except:
+        return JSONResponse({"error": "cannot upload data"}, status_code=404)
 
-def add_image_to_project(project_ID, image_data, image_name):
+def download_data_from_s3(fileName):
+    s3_image_key = 'data/' + fileName
+    try:
+        # Download the image from S3
+        local_file_name = os.path.join(images_path,fileName)
+        s3.download_file(access_point_alias, s3_image_key, local_file_name)
+        return local_file_name
+    except:
+        return JSONResponse({"error": "cannot dowload data"}, status_code=404)
+
+def createOutput(bucketID, name, format):
+    try:
+        outputs = db.outputs
+        buckets = db.buckets
+        newDataset = {
+            'name' : name,
+            'format' : format,
+            'bucket' : ObjectId(bucketID)
+        }
+        outputID = addFile(newDataset,outputs)
+
+        filter = {'_id': ObjectId(bucketID)}
+
+        update = {'$push': {'outputs' : outputID}}
+
+        buckets.update_one(filter, update)
+        return str(outputID)
+    except Exception as e:
+        print(f"Error adding dataset to db: {e}")
+        return None
+
+def add_data_to_project(project_ID, image_data, image_name):
     try:
         # Upload image to S3
-        image_url = upload_image_to_s3(image_data, image_name)
+        upload_data_to_s3(image_data, image_name)
         images = db.images
         # Create project in MongoDB
         img = {
             "project": project_ID,
-            "image": image_url,
             "name": image_name
         }
         result = str(addFile(img,images))
         return result
-    except: return JSONResponse({"error": "cannot upload image"}, status_code=404)
+    except: return JSONResponse({"error": "cannot upload data"}, status_code=404)
 
 def create_access_token(data: dict):
     to_encode = data.copy()
@@ -151,7 +192,7 @@ def get_user(collection, userName: str):
     except: 
         return JSONResponse({"error": "user not found"}, status_code=404)
     
-def get_project(collection, projectId: str):
+def find_project(collection, projectId: str):
     try:
         objId = ObjectId(projectId)
         proj = collection.find({"_id": objId})
@@ -165,6 +206,18 @@ def get_project(collection, projectId: str):
 
         project.update({'id':projectId})
         return project
+    except: 
+        return JSONResponse({"error": "project not found"}, status_code=404)
+    
+def find_data(datasetID: str):
+    try:
+        objId = ObjectId(datasetID)
+        data = db.rawData
+        files = data.find({"dataset": objId})
+        file_names = []
+        for file in files:
+            file_names.append(file)
+        return file_names
     except: 
         return JSONResponse({"error": "project not found"}, status_code=404)
     
@@ -205,6 +258,44 @@ def validate_email_address(email: str):
     except EmailNotValidError as e:
         # Email is not valid, exception message is human-readable
         raise HTTPException(status_code=400, detail=str(e))
+    
+
+def get_output_info(output_id: str):
+    try:
+        obj_id = ObjectId(output_id)
+        outputs = db.outputs
+        output = outputs.find_one({"_id": obj_id})
+        
+        if output:
+            return {
+                "id": str(output["_id"]),
+                "name": output.get("name"),
+                "format": output.get("format")
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Output not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving output: {str(e)}")
+    
+def get_dataset_info(dataset_id: str):
+    try:
+        # Convert the string ID to ObjectId
+        obj_id = ObjectId(dataset_id)
+        
+        # Query the datasets collection
+        datasets = db.datasets
+        dataset = datasets.find_one({"_id": obj_id})
+        
+        if dataset:
+            return {
+                "id": str(dataset["_id"]),
+                "name": dataset.get("name"),
+                "type": dataset.get("type")
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Dataset not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving dataset: {str(e)}")
 
 @app.post("/token")
 async def login(username: str = Form(...), password: str = Form(...)):
@@ -291,9 +382,6 @@ async def get_projects(current_user: dict = Depends(get_current_user)):
         return projects
     except : return JSONResponse({"error": "unable to access projects"}, status_code=404)
 
-from fastapi import Body, HTTPException
-from bson.errors import InvalidId
-
 @app.post("/delete_project")
 async def delete_project(project_id: str = Body(...)):
     try:
@@ -309,22 +397,120 @@ async def delete_project(project_id: str = Body(...)):
         raise HTTPException(status_code=500, detail=f"Unable to delete project: {str(e)}")
     
 @app.get("/project/{project_id}")
-async def find_project(project_id):
+async def get_project(project_id):
     try:
         projects = db.projects
-        result = get_project(projects,project_id)
+        result = find_project(projects,project_id)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unable to find project: {str(e)}")
+    
+@app.get("/project/{project_id}/buckets")
+async def get_buckets(project_id: str):
+    try:
+        buckets = db.buckets
+        project_buckets = buckets.find({"project": ObjectId(project_id)})
+        
+        display_buckets = []
+        for bucket in project_buckets:
+            display_bucket = {
+                "_id": str(bucket["_id"]),
+                "name": bucket["name"],
+                "datasets": [],
+                "outputs": []
+            }
+            
+            # Populate datasets with name and type
+            for dataset_id in bucket.get("datasets", []):
+                try:
+                    dataset_info = get_dataset_info(str(dataset_id))
+                    display_bucket["datasets"].append({
+                        "id": dataset_info["id"],
+                        "name": dataset_info["name"],
+                        "type": dataset_info["type"]
+                    })
+                except HTTPException:
+                    # If a dataset is not found, we'll skip it instead of failing the whole request
+                    print(f"Dataset {dataset_id} not found")
 
-@app.post("/upload-image/")
-async def upload_image(file: UploadFile = File(...), fileName: str = Form(...), project_id: str = Form(...)):
-    project_obj_id = ObjectId(project_id)
+            # Populate outputs with name and format
+            for output_id in bucket.get("outputs", []):
+                try:
+                    output_info = get_output_info(str(output_id))
+                    display_bucket["outputs"].append({
+                        "id": output_info["id"],
+                        "name": output_info["name"],
+                        "format": output_info["format"]
+                    })
+                except HTTPException:
+                    # If an output is not found, we'll skip it instead of failing the whole request
+                    print(f"Output {output_id} not found")
+            
+            display_buckets.append(display_bucket)
+        print(display_buckets)
+        
+        return display_buckets
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unable to find buckets: {str(e)}")
     
-    # Save project with image reference to MongoDB
-    image_id = add_image_to_project(project_obj_id, file, fileName)
+@app.post("/project/{project_id}/new-bucket")
+async def createBucket(
+    project_id: str, 
+    name: str = Form(...),
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        buckets = db.buckets
+        newBucket = {
+            'name': name,
+            'datasets': [],
+            'outputs': [],
+            'project': ObjectId(project_id),
+            'user': current_user["username"]  # Use the username from the token
+        }
+        bucketID = addFile(newBucket, buckets)
+        return str(bucketID)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unable to create new bucket: {str(e)}")
+@app.post("/bucket/{bucket_id}/new-dataset")
+async def createDataset(bucket_id, name: str = Form(...), type: str = Form(...)):
+    try:
+        datasets = db.datasets
+        buckets = db.buckets
+        newDataset = {
+            'name' : name,
+            'type' : type,
+            'bucket' : ObjectId(bucket_id)
+        }
+        datasetID = addFile(newDataset,datasets)
+
+        filter = {'_id': ObjectId(bucket_id)}
+
+        update = {'$push': {'datasets' : datasetID}}
+
+        buckets.update_one(filter, update)
+        return str(datasetID)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unable to create new dataset: {str(e)}")
     
-    return image_id
+@app.post("/dataset/{dataset_id}/add-data")
+async def addData(dataset_id, type: str = Form(...), file = File(...), fileName: str = Form(...), username: str = Form(...)):
+    try:
+        rawData = db.rawData
+        response = upload_data_to_s3(file, fileName, type, )
+
+        raw_data_entry = {
+            'dataset': ObjectId(dataset_id),
+            'type': type,
+            'value': response['id'],
+            'user': username,
+            'name': fileName
+        }
+
+        dataID = addFile(raw_data_entry, rawData)
+        return str(dataID)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unable to upload data: {str(e)}")
 
 @app.post("/update_mask")
 async def update_mask(

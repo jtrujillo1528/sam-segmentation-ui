@@ -3,16 +3,18 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../../components/api';
 import { Button } from '../../../components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '../../../components/ui/dialog';
+import { Input } from '../../../components/ui/input';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import BucketCard from '../../../components/ui/bucketCard';
 
 const ProjectPageClient = ({ projectId }) => {
     const router = useRouter();
     const [project, setProject] = useState(null);
-    const [images, setImages] = useState([]);
+    const [buckets, setBuckets] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
-
+    const [isNewBucketModalOpen, setIsNewBucketModalOpen] = useState(false);
+    const [newBucketName, setNewBucketName] = useState('');
 
     useEffect(() => {
         const fetchProjectData = async () => {
@@ -25,16 +27,15 @@ const ProjectPageClient = ({ projectId }) => {
             }
 
             try {
-                const [projectResponse, imagesResponse] = await Promise.all([
+                const [projectResponse, bucketsResponse] = await Promise.all([
                     api.get(`/project/${projectId}`),
-                    api.get(`/project/${projectId}/images`)
+                    api.get(`/project/${projectId}/buckets`)
                 ]);
 
                 setProject(projectResponse.data);
-                setImages(imagesResponse.data);
+                setBuckets(bucketsResponse.data);
             } catch (error) {
                 console.error('Error fetching project data:', error);
-                // Handle error (e.g., show error message to user)
             } finally {
                 setIsLoading(false);
             }
@@ -43,77 +44,102 @@ const ProjectPageClient = ({ projectId }) => {
         fetchProjectData();
     }, [projectId]);
 
-  const handleImageUpload = async (event) => {
-    const file = event.target.files[0];
-    const formData = new FormData();
-    formData.append('image', file);
+    const handleCreateBucket = async (e) => {
+      e.preventDefault();
+      try {
+          const formData = new FormData();
+          formData.append('name', newBucketName);
+  
+          const response = await api.post(`/project/${projectId}/new-bucket`, formData, {
+              headers: {
+                  'Content-Type': 'multipart/form-data',
+              },
+          });
+          
+          // Refresh buckets after creating a new one
+          const bucketsResponse = await api.get(`/project/${projectId}/buckets`);
+          setBuckets(bucketsResponse.data);
+          setIsNewBucketModalOpen(false);
+          setNewBucketName('');
+      } catch (error) {
+          console.error('Error creating bucket:', error);
+          if (error.response) {
+              console.error('Error response:', error.response.data);
+          }
+          // Handle unauthorized errors here, e.g., redirect to login page
+          if (error.response && error.response.status === 401) {
+              router.push('/login');
+          }
+      }
+    };
 
-    try {
-      await api.post(`/project/${projectId}/upload-image`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-      fetchProjectImages();
-    } catch (error) {
-      console.error('Error uploading image:', error);
-    }
+    const handleDeleteBucket = async (bucketId) => {
+      try {
+          await api.delete(`/project/${projectId}/bucket/${bucketId}`);
+          // Refresh buckets after deleting
+          const bucketsResponse = await api.get(`/project/${projectId}/buckets`);
+          setBuckets(bucketsResponse.data);
+      } catch (error) {
+          console.error('Error deleting bucket:', error);
+      }
   };
 
-  const handleGenerateYOLOv8Masks = async () => {
-    try {
-      await api.post(`/project/${projectId}/generate-yolov8-masks`);
-      alert('YOLOv8 masks generated successfully!');
-    } catch (error) {
-      console.error('Error generating YOLOv8 masks:', error);
-      alert('Error generating YOLOv8 masks. Please try again.');
+    if (isLoading) {
+        return <div>Loading...</div>;
     }
-  };
 
-  if (isLoading) {
-    return <div>Loading...</div>;
-}
+    if (!project) {
+        return <div>Project not found</div>;
+    }
 
-if (!project) {
-    return <div>Project not found</div>;
-}
+    return (
+        <div className="min-h-screen bg-gray-900 text-white p-8">
+            <h1 className="text-3xl font-bold mb-8">{project.name}</h1>
+            <p className="mb-4">{project.description}</p>
 
-  return (
-    <div className="min-h-screen bg-gray-900 text-white p-8">
-      <h1 className="text-3xl font-bold mb-8">{project.name}</h1>
-      <p className="mb-4">{project.description}</p>
+            <Button onClick={() => setIsNewBucketModalOpen(true)} className="mb-8 bg-blue-600 hover:bg-blue-700">
+                Create New Bucket
+            </Button>
 
-      <div className="mb-8">
-        <h2 className="text-2xl font-semibold mb-4">Upload Images</h2>
-        <input type="file" onChange={handleImageUpload} accept="image/*" className="mb-4" />
-      </div>
 
-      <div className="mb-8">
-        <h2 className="text-2xl font-semibold mb-4">Project Images</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {images.map((image) => (
-            <Card key={image.id} className="bg-gray-800">
-              <CardHeader>
-                <CardTitle>{image.name}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <img src={image.url} alt={image.name} className="w-full h-48 object-cover" />
-              </CardContent>
-            </Card>
-          ))}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {buckets.map((bucket) => (
+                    <BucketCard 
+                        key={bucket._id} 
+                        bucket={bucket} 
+                        onDelete={handleDeleteBucket} 
+                    />
+                ))}
+            </div>
+
+            <Dialog open={isNewBucketModalOpen} onOpenChange={setIsNewBucketModalOpen}>
+                <DialogContent className="bg-gray-800 text-white">
+                    <DialogHeader>
+                        <DialogTitle>Create New Bucket</DialogTitle>
+                        <DialogDescription>
+                          Enter a name for your new bucket. Buckets help you organize your datasets and outputs.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <form onSubmit={handleCreateBucket}>
+                        <div className="grid gap-4 py-4">
+                            <div className="grid grid-cols-4 items-center gap-4">
+                                <label htmlFor="name" className="text-right">Name</label>
+                                <Input
+                                    id="name"
+                                    value={newBucketName}
+                                    onChange={(e) => setNewBucketName(e.target.value)}
+                                    className="col-span-3 bg-gray-700 text-white border-blue-500"
+                                />
+                            </div>
+                        </div>
+                        <DialogFooter>
+                            <Button type="submit" className="bg-blue-600 hover:bg-blue-700">Create Bucket</Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
         </div>
-      </div>
-
-      <div className="flex space-x-4">
-        <Link to={`/segmentation/${projectId}`}>
-          <Button className="bg-blue-600 hover:bg-blue-700">
-            Go to Segmentation UI
-          </Button>
-        </Link>
-        <Button onClick={handleGenerateYOLOv8Masks} className="bg-green-600 hover:bg-green-700">
-          Generate YOLOv8 Masks
-        </Button>
-      </div>
-    </div>
-  );
+    );
 };
 
 export default ProjectPageClient;
