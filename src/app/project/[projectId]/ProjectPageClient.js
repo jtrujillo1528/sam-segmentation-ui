@@ -15,6 +15,9 @@ import BucketCard from '../../../components/ui/bucketCard';
 //Add create output functionality which will create formatted data from edited dataset
 //How to link segmentation UI to uploaded image data
 //How to handle model training on the UI
+//Create navigation bar to allow users to navigate between pages
+//Fix log in dialog so that users can see what part of login is wrong
+//add forgotten password functionality
 
 const ProjectPageClient = ({ projectId }) => {
     const router = useRouter();
