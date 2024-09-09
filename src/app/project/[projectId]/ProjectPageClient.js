@@ -8,6 +8,14 @@ import { Input } from '../../../components/ui/input';
 import { useRouter } from 'next/navigation';
 import BucketCard from '../../../components/ui/bucketCard';
 
+//to do
+//Create components for datasets and outputs to be displayed within bucket card
+//Add create dataset and create output functionalities
+//Add upload data functionality which creates rawData objects associated with with a dataset and s3 objects associated with each dataset
+//Add create output functionality which will create formatted data from edited dataset
+//How to link segmentation UI to uploaded image data
+//How to handle model training on the UI
+
 const ProjectPageClient = ({ projectId }) => {
     const router = useRouter();
     const [project, setProject] = useState(null);
