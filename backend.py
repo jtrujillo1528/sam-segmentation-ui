@@ -132,6 +132,16 @@ def download_data_from_s3(fileName):
         return local_file_name
     except:
         return JSONResponse({"error": "cannot dowload data"}, status_code=404)
+    
+def delete_object_from_s3(object_name):
+    try:
+        object_key = 'data/' + str(object_name)
+        # Delete the object
+        response = s3.delete_object(Bucket=access_point_alias, Key=object_key)
+        print(f"Deleted {object_key}")
+        return response
+    except:
+        return JSONResponse({"error": "cannot delete objects"}, status_code=404)
 
 def createOutput(bucketID, name, format):
     try:
@@ -472,6 +482,54 @@ async def createBucket(
         return str(bucketID)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unable to create new bucket: {str(e)}")
+    
+@app.delete("/project/{project_id}/bucket/{bucket_id}")
+async def delete_bucket(project_id: str, bucket_id: str, current_user: dict = Depends(get_current_user)):
+    try:
+        # MongoDB collections
+        buckets = db.buckets
+        datasets = db.datasets
+        outputs = db.outputs
+        rawData = db.rawData
+
+        # Retrieve the bucket
+        bucket = buckets.find_one({"_id": ObjectId(bucket_id), "project": ObjectId(project_id)})
+        if not bucket:
+            raise HTTPException(status_code=404, detail="Bucket not found")
+
+        # Delete associated datasets and their raw data
+        for dataset_id in bucket.get('datasets', []):
+            # Find rawData objects associated with this dataset
+            raw_data_entries = rawData.find({"dataset": dataset_id})
+
+            # Delete associated raw data objects from S3 and MongoDB
+            for raw_data in raw_data_entries:
+                # Extract the UUID from the rawData object
+                uuid_value = raw_data.get('value')
+                if uuid_value:
+                    # Delete the file from S3
+                    delete_object_from_s3(uuid_value)
+                # Delete the rawData document from MongoDB
+                rawData.delete_one({"_id": raw_data["_id"]})
+
+            # Delete the dataset
+            datasets.delete_one({"_id": dataset_id})
+
+        # Delete associated outputs
+        for output_id in bucket.get('outputs', []):
+            outputs.delete_one({"_id": output_id})
+
+        # Finally, delete the bucket itself
+        result = buckets.delete_one({"_id": ObjectId(bucket_id)})
+
+        if result.deleted_count == 1:
+            return {"message": "Bucket and associated data deleted successfully"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to delete bucket")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unable to delete bucket: {str(e)}")
+    
 @app.post("/bucket/{bucket_id}/new-dataset")
 async def createDataset(bucket_id, name: str = Form(...), type: str = Form(...)):
     try:
