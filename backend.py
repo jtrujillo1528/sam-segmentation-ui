@@ -107,21 +107,23 @@ def pullData(field, value, collection):
     except: 
         return JSONResponse({"error": "cannot access database"}, status_code=404)
     
-def upload_data_to_s3(file, file_name, file_type):
+async def upload_data_to_s3(file, file_name, file_type):
     try:
         file_id = str(uuid4())
         file_key = 'data/' + file_id
         if file_type == 'image': 
+            contents = await file.read()
+            image = Image.open(io.BytesIO(contents))
             image_bytes = io.BytesIO()
-            file.save(image_bytes, format='JPEG')  
+            image.save(image_bytes, format='JPEG')  
             image_bytes.seek(0)  
             body = image_bytes
         else:
-            body = file
+            body = await file.read()
         s3.put_object(Bucket=access_point_alias, Key=file_key, Body=body)
         return {'file name': file_name, 'id': file_id}
-    except:
-        return JSONResponse({"error": "cannot upload data"}, status_code=404)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unable to upload data to S3: {str(e)}")
 
 def download_data_from_s3(fileName):
     s3_image_key = 'data/' + fileName
@@ -138,10 +140,9 @@ def delete_object_from_s3(object_name):
         object_key = 'data/' + str(object_name)
         # Delete the object
         response = s3.delete_object(Bucket=access_point_alias, Key=object_key)
-        print(f"Deleted {object_key}")
         return response
-    except:
-        return JSONResponse({"error": "cannot delete objects"}, status_code=404)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unable to delete data from S3: {str(e)}")
 
 def createOutput(bucketID, name, format):
     try:
@@ -393,11 +394,10 @@ async def get_projects(current_user: dict = Depends(get_current_user)):
     except : return JSONResponse({"error": "unable to access projects"}, status_code=404)
 
 @app.post("/delete_project")
-async def delete_project(project_id: str = Body(...)):
+async def delete_project(project_id: str = Body(...), current_user: dict = Depends(get_current_user)):
     try:
         projects = db.projects
         object_id = ObjectId(project_id)
-        print(object_id)
         result = projects.delete_one({"_id": object_id})
         if result.deleted_count == 1:
             return {"message": "Project deleted successfully"}
@@ -416,7 +416,7 @@ async def get_project(project_id):
         raise HTTPException(status_code=500, detail=f"Unable to find project: {str(e)}")
     
 @app.get("/project/{project_id}/buckets")
-async def get_buckets(project_id: str):
+async def get_buckets(project_id: str, current_user: dict = Depends(get_current_user)) :
     try:
         buckets = db.buckets
         project_buckets = buckets.find({"project": ObjectId(project_id)})
@@ -457,8 +457,6 @@ async def get_buckets(project_id: str):
                     print(f"Output {output_id} not found")
             
             display_buckets.append(display_bucket)
-        print(display_buckets)
-        
         return display_buckets
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unable to find buckets: {str(e)}")
@@ -530,8 +528,40 @@ async def delete_bucket(project_id: str, bucket_id: str, current_user: dict = De
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unable to delete bucket: {str(e)}")
     
+@app.delete("/project/{project_id}/bucket/{bucket_id}/dataset/{dataset_id}")
+async def delete_dataset(dataset_id: str, bucket_id: str, current_user: dict = Depends(get_current_user)):
+    try:
+        # MongoDB collections
+        buckets = db.buckets
+        datasets = db.datasets
+        rawData = db.rawData
+
+        result = buckets.update_one(
+            {"_id": ObjectId(bucket_id)},
+            {"$pull": {"datasets": ObjectId(dataset_id)}})
+        if result.modified_count == 0:
+            raise HTTPException(status_code=404, detail="Bucket not found or dataset not in bucket")
+
+    # Delete associated datasets and their raw data
+        raw_data_entries = rawData.find({"dataset": ObjectId(dataset_id)})
+
+        # Delete associated raw data objects from S3 and MongoDB
+        for raw_data in raw_data_entries:
+            # Extract the UUID from the rawData object
+            uuid_value = raw_data.get('value')
+            if uuid_value:
+                # Delete the file from S3
+                delete_object_from_s3(uuid_value)
+            # Delete the rawData document from MongoDB
+            rawData.delete_one({"_id": raw_data["_id"]})
+
+        # Delete the dataset
+        datasets.delete_one({"_id": ObjectId(dataset_id)})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unable to delete dataset: {str(e)}")
+    
 @app.post("/bucket/{bucket_id}/new-dataset")
-async def createDataset(bucket_id, name: str = Form(...), type: str = Form(...)):
+async def createDataset(bucket_id, name: str = Form(...), type: str = Form(...),current_user: dict = Depends(get_current_user)):
     try:
         datasets = db.datasets
         buckets = db.buckets
@@ -552,16 +582,19 @@ async def createDataset(bucket_id, name: str = Form(...), type: str = Form(...))
         raise HTTPException(status_code=500, detail=f"Unable to create new dataset: {str(e)}")
     
 @app.post("/dataset/{dataset_id}/add-data")
-async def addData(dataset_id, type: str = Form(...), file = File(...), fileName: str = Form(...), username: str = Form(...)):
+async def addData(dataset_id, type: str = Form(...), file: UploadFile = File(...), fileName: str = Form(...), current_user: dict = Depends(get_current_user)):
     try:
         rawData = db.rawData
-        response = upload_data_to_s3(file, fileName, type, )
+        response = await upload_data_to_s3(file, fileName, type)
 
+        if not isinstance(response, dict) or 'id' not in response:
+            raise ValueError("Unexpected response from upload_data_to_s3")
+        
         raw_data_entry = {
             'dataset': ObjectId(dataset_id),
             'type': type,
             'value': response['id'],
-            'user': username,
+            'user': current_user["username"],
             'name': fileName
         }
 
@@ -815,5 +848,4 @@ async def delete_image(image_id: str):
         return JSONResponse({"error": "Image not found"}, status_code=404)
 
 if __name__ == "__main__":
-    print('running...')
     uvicorn.run(app, host="localhost", port=8000)

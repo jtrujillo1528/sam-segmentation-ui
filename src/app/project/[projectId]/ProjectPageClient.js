@@ -95,6 +95,45 @@ const ProjectPageClient = ({ projectId }) => {
       }
   };
 
+  const handleDeleteDataset = async (bucketId, datasetId) => {
+    try {
+        await api.delete(`/project/${projectId}/bucket/${bucketId}/dataset/${datasetId}`);
+        // Refresh buckets after deleting dataset
+        const bucketsResponse = await api.get(`/project/${projectId}/buckets`);
+        setBuckets(bucketsResponse.data);
+    } catch (error) {
+        console.error('Error deleting dataset:', error);
+    }
+};
+
+const handleAddDataToDataset = async (bucketId, datasetId) => {
+    // Implement logic to add data to dataset
+    // This could open a modal for file upload or navigate to a new page
+    console.log(`Add data to dataset ${datasetId} in bucket ${bucketId}`);
+};
+
+const handleAddDataset = async (bucketId, newDataset) => {
+  console.log('handleAddDataset called in ProjectPageClient', { bucketId, newDataset }); // Debug log
+  try {
+      // Update the local state with the new dataset
+      setBuckets(prevBuckets => prevBuckets.map(bucket => {
+          if (bucket._id === bucketId) {
+              return {
+                  ...bucket,
+                  datasets: [...bucket.datasets, newDataset]
+              };
+          }
+          return bucket;
+      }));
+
+      // Optionally, you can refetch the buckets to ensure sync with the server
+      const bucketsResponse = await api.get(`/project/${projectId}/buckets`);
+      setBuckets(bucketsResponse.data);
+  } catch (error) {
+      console.error('Error updating buckets after adding dataset:', error);
+  }
+};
+
     if (isLoading) {
         return <div>Loading...</div>;
     }
@@ -104,24 +143,26 @@ const ProjectPageClient = ({ projectId }) => {
     }
 
     return (
-        <div className="min-h-screen bg-gray-900 text-white p-8">
-            <h1 className="text-3xl font-bold mb-8">{project.name}</h1>
-            <p className="mb-4">{project.description}</p>
+      <div className="min-h-screen bg-gray-900 text-white p-8">
+          <h1 className="text-3xl font-bold mb-8">{project?.name}</h1>
+          <p className="mb-4">{project?.description}</p>
 
-            <Button onClick={() => setIsNewBucketModalOpen(true)} className="mb-8 bg-blue-600 hover:bg-blue-700">
-                Create New Bucket
-            </Button>
+          <Button onClick={() => setIsNewBucketModalOpen(true)} className="mb-8 bg-blue-600 hover:bg-blue-700">
+              Create New Bucket
+          </Button>
 
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {buckets.map((bucket) => (
-                    <BucketCard 
-                        key={bucket._id} 
-                        bucket={bucket} 
-                        onDelete={handleDeleteBucket} 
-                    />
-                ))}
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {buckets.map((bucket) => (
+                  <BucketCard 
+                      key={bucket._id} 
+                      bucket={bucket} 
+                      onDelete={handleDeleteBucket}
+                      onDeleteDataset={handleDeleteDataset}
+                      onAddDataToDataset={handleAddDataToDataset}
+                      onAddDataset={handleAddDataset}
+                  />
+              ))}
+          </div>
 
             <Dialog open={isNewBucketModalOpen} onOpenChange={setIsNewBucketModalOpen}>
                 <DialogContent className="bg-gray-800 text-white">
