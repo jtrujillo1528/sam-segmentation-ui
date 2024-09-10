@@ -15,23 +15,29 @@ export const BucketCard = ({ bucket, onDelete, onDeleteDataset, onAddDataToDatas
     const [isHovered, setIsHovered] = useState(false);
     const [newDatasetName, setNewDatasetName] = useState('');
     const [newDatasetType, setNewDatasetType] = useState('Select dataset type');
+    const [isDeleting, setIsDeleting] = useState(false);
 
     const handleDelete = () => {
         setShowDeleteDialog(true);
     };
 
-    const confirmDelete = () => {
-        onDelete(bucket._id);
-        setShowDeleteDialog(false);
+    const confirmDelete = async () => {
+        setIsDeleting(true);
+        try {
+            await onDelete(bucket._id);
+        } catch (error) {
+            console.error('Error deleting bucket:', error);
+        } finally {
+            setIsDeleting(false);
+            setShowDeleteDialog(false);
+        }
     };
 
     const handleDatasetTypeChange = (value) => {
-        console.log('Dataset type changed:', value); // Debug log
         setNewDatasetType(value);
     };
 
     const handleAddDataset = async () => {
-        console.log('Adding dataset:', { name: newDatasetName, type: newDatasetType }); // Debug log
         try {
             const formData = new FormData();
             formData.append('name', newDatasetName);
@@ -58,10 +64,7 @@ export const BucketCard = ({ bucket, onDelete, onDeleteDataset, onAddDataToDatas
     };
 
     const handleAddData = async (datasetId) => {
-        // This function will be called after successful data upload
-        // You might want to refresh the bucket data or update the dataset's file count
         console.log(`Data added to dataset ${datasetId}`);
-        // Optionally, you can fetch updated bucket data here
     };
     
     return (
@@ -73,12 +76,15 @@ export const BucketCard = ({ bucket, onDelete, onDeleteDataset, onAddDataToDatas
                 onMouseLeave={() => setIsHovered(false)}
             >
                 {isHovered && (
-                    <Button
-                        onClick={handleDelete}
-                        className="absolute top-2 right-2 p-2 bg-red-600 hover:bg-red-700"
-                    >
-                        <Trash2 size={16} />
-                    </Button>
+              <div className="absolute top-2 right-2 opacity-100 transition-opacity">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleDelete}
+              >
+                <Trash2 className= "h-4 w-4 text-red-500 cursor-pointer hover:text-red-700 transition-colors" />
+              </Button>
+            </div>
                 )}
                 <CardHeader>
                     <CardTitle>{bucket.name}</CardTitle>
@@ -89,9 +95,9 @@ export const BucketCard = ({ bucket, onDelete, onDeleteDataset, onAddDataToDatas
                             <h3 className="text-lg font-semibold">Datasets</h3>
                             <Button
                                 onClick={() => setShowAddDatasetDialog(true)}
-                                className="p-2 bg-green-600 hover:bg-green-700"
+                                className="bg-blue-600 hover:bg-blue-700"
                             >
-                                <Plus size={16} />
+                                New Dataset
                             </Button>
                         </div>
                         <div className="h-40 overflow-y-auto">
@@ -138,8 +144,10 @@ export const BucketCard = ({ bucket, onDelete, onDeleteDataset, onAddDataToDatas
                         </DialogDescription>
                     </DialogHeader>
                     <DialogFooter>
-                        <Button onClick={() => setShowDeleteDialog(false)} variant="outline">Cancel</Button>
-                        <Button onClick={confirmDelete} className="bg-red-600 hover:bg-red-700">Delete</Button>
+                        <Button onClick={() => setShowDeleteDialog(false)} variant="outline" disabled={isDeleting}>Cancel</Button>
+                        <Button onClick={confirmDelete} className="bg-red-600 hover:bg-red-700" disabled={isDeleting}>
+                            {isDeleting ? 'Deleting...' : 'Delete'}
+                        </Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>

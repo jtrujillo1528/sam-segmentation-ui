@@ -568,6 +568,7 @@ async def createDataset(bucket_id, name: str = Form(...), type: str = Form(...),
         newDataset = {
             'name' : name,
             'type' : type,
+            'fileCount': 0,
             'bucket' : ObjectId(bucket_id)
         }
         datasetID = addFile(newDataset,datasets)
@@ -602,6 +603,25 @@ async def addData(dataset_id, type: str = Form(...), file: UploadFile = File(...
         return str(dataID)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unable to upload data: {str(e)}")
+    
+@app.post("/dataset/{dataset_id}/update-filecount")
+async def update_filecount(dataset_id, current_user: dict = Depends(get_current_user)):
+    try:
+        rawData = db.rawData
+        datasets = db.datasets
+
+        current_dataset = datasets.find_one({'_id': ObjectId(dataset_id)})
+
+        querryResult = rawData.find({'dataset': ObjectId(dataset_id)})
+        if querryResult is not None:
+            docs = list(querryResult)
+            filter = {'_id': ObjectId(dataset_id)}
+            update = {'$set':{'fileCount' : current_dataset['fileCount'] + len(docs)}}
+            datasets.update_one(filter,update)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unable to update filecount: {str(e)}")
+
+
 
 @app.post("/update_mask")
 async def update_mask(

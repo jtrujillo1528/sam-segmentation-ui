@@ -106,11 +106,6 @@ const ProjectPageClient = ({ projectId }) => {
     }
 };
 
-const handleAddDataToDataset = async (bucketId, datasetId) => {
-    // Implement logic to add data to dataset
-    // This could open a modal for file upload or navigate to a new page
-    console.log(`Add data to dataset ${datasetId} in bucket ${bucketId}`);
-};
 
 const handleAddDataset = async (bucketId, newDataset) => {
   console.log('handleAddDataset called in ProjectPageClient', { bucketId, newDataset }); // Debug log
@@ -134,18 +129,10 @@ const handleAddDataset = async (bucketId, newDataset) => {
   }
 };
 
-    if (isLoading) {
-        return <div>Loading...</div>;
-    }
-
-    if (!project) {
-        return <div>Project not found</div>;
-    }
-
     return (
       <div className="min-h-screen bg-gray-900 text-white p-8">
-          <h1 className="text-3xl font-bold mb-8">{project?.name}</h1>
-          <p className="mb-4">{project?.description}</p>
+          <h1 className="text-3xl font-bold mb-8">Project: {project?.name}</h1>
+          <p className="mb-4">Description: {project?.description}</p>
 
           <Button onClick={() => setIsNewBucketModalOpen(true)} className="mb-8 bg-blue-600 hover:bg-blue-700">
               Create New Bucket
@@ -158,7 +145,6 @@ const handleAddDataset = async (bucketId, newDataset) => {
                       bucket={bucket} 
                       onDelete={handleDeleteBucket}
                       onDeleteDataset={handleDeleteDataset}
-                      onAddDataToDataset={handleAddDataToDataset}
                       onAddDataset={handleAddDataset}
                   />
               ))}

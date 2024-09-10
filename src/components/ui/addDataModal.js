@@ -24,12 +24,13 @@ const AddDataModal = ({ isOpen, onClose, datasetId, datasetType, onDataAdded }) 
                 formData.append('fileName', file.name);
                 formData.append('type', datasetType);
 
-                const response = await api.post(`/dataset/${datasetId}/add-data`, formData, {
+                await api.post(`/dataset/${datasetId}/add-data`, formData, {
                     headers: {
                         'Content-Type': 'multipart/form-data',
                     },
                 });
             }
+            await api.post(`/dataset/${datasetId}/update-filecount`)
             onDataAdded();
             onClose();
         } catch (err) {
