@@ -71,7 +71,10 @@ export const BucketCard = ({ bucket, onDelete, onDeleteDataset, onAddDataset, re
         <>
             <Card 
                 key={bucket._id} 
-                className="bg-gray-800 relative"
+                className={`
+                    bg-gray-800 relative
+                    ${selectedDataset && selectedDataset.bucketId === bucket._id ? 'border-2 border-blue-500' : ''}
+                `}
                 onMouseEnter={() => setIsHovered(true)}
                 onMouseLeave={() => setIsHovered(false)}
             >
@@ -110,7 +113,7 @@ export const BucketCard = ({ bucket, onDelete, onDeleteDataset, onAddDataset, re
                                         onDelete={(datasetId) => onDeleteDataset(bucket._id, datasetId)}
                                         onAddData={() => handleAddData(dataset.id)}
                                         refreshBuckets={refreshBuckets}
-                                        onSelect={() => onSelectDataset({...dataset, bucketId: bucket._id})}  // Pass the onSelect prop
+                                        onSelect={onSelectDataset}  // Pass the onSelect prop
                                         isSelected={selectedDataset && selectedDataset.id === dataset.id}
                                     />
                                 ))

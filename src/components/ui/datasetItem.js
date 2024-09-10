@@ -33,18 +33,23 @@ export const DatasetItem = ({ dataset, bucketId, onDelete, onAddData, refreshBuc
 
     return (
         <>
-            <div 
-                className={`flex items-center justify-between p-2 hover:bg-gray-700 rounded relative ${isSelected ? 'bg-blue-600' : ''}`}
-                onMouseEnter={() => setIsHovered(true)}
-                onMouseLeave={() => setIsHovered(false)}
-                onClick={() => onSelect && onSelect(dataset)}
-            >
+                <div 
+                    className={`
+                        flex items-center justify-between p-2 
+                        rounded relative transition-colors duration-200
+                        ${isSelected ? 'border-2 border-blue-500' : 'border-2 border-transparent'}
+                        ${isHovered ? 'bg-gray-700' : 'bg-gray-800'}
+                    `}
+                    onMouseEnter={() => setIsHovered(true)}
+                    onMouseLeave={() => setIsHovered(false)}
+                    onClick={() => onSelect && onSelect(dataset)}
+                >
                 <div className="flex-grow">
                     <p className="font-medium">{dataset.name}</p>
                     <p className="text-sm text-gray-400">Type: {dataset.type}</p>
-                    <p className="text-sm text-gray-400">Files: {dataset.fileCount !== undefined ? dataset.fileCount : 'N/A'}</p>
+                    <p className="text-sm text-gray-400">Files: {dataset.fileCount}</p>
                 </div>
-                {isHovered && (
+                {(isHovered || isSelected) && (
                     <div className="flex items-center space-x-2 absolute right-2 top-1/2 transform -translate-y-1/2">
                         <Button
                             onClick={handleAddData}

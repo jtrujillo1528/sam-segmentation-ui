@@ -124,9 +124,13 @@ const handleAddDataset = async (bucketId, newDataset) => {
   }
 };
 const handleDatasetSelect = (dataset) => {
-  setSelectedDataset(dataset);
+  if (selectedDataset && selectedDataset.id === dataset.id) {
+      // Unselect if clicking the same dataset
+      setSelectedDataset(null);
+  } else {
+      setSelectedDataset(dataset);
+  }
 };
-
 const handleProcessData = () => {
   if (selectedDataset && selectedDataset.fileCount > 0) {
       router.push(`/segmentation/${selectedDataset.id}`);
@@ -135,19 +139,21 @@ const handleProcessData = () => {
 
     return (
       <div className="min-h-screen bg-gray-900 text-white p-8">
-          <h1 className="text-3xl font-bold mb-8">Project: {project?.name}</h1>
-          <p className="mb-4">Description: {project?.description}</p>
+      <h1 className="text-3xl font-bold mb-4">Project: {project?.name}</h1>
+      <p className="mb-6">Description: {project?.description}</p>
 
-          <Button onClick={() => setIsNewBucketModalOpen(true)} className="mb-8 bg-blue-600 hover:bg-blue-700">
+      <div className="flex items-center mb-8 space-x-4">
+          <Button onClick={() => setIsNewBucketModalOpen(true)} className="bg-blue-600 hover:bg-blue-700">
               Create New Bucket
           </Button>
           <Button 
-                    onClick={handleProcessData} 
-                    className="bg-green-600 hover:bg-green-700"
-                    disabled={!selectedDataset || selectedDataset.fileCount === 0}
-                >
-                    Process Data
-                </Button>
+              onClick={handleProcessData} 
+              className="bg-blue-600 hover:bg-blue-700"
+              disabled={!selectedDataset || selectedDataset.fileCount === 0}
+          >
+              Process Data
+          </Button>
+      </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {buckets.map((bucket) => (
