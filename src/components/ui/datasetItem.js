@@ -4,7 +4,7 @@ import { Trash2, Plus } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from './dialog';
 import AddDataModal from './addDataModal';
 
-export const DatasetItem = ({ dataset, bucketId, onDelete, onAddData }) => {
+export const DatasetItem = ({ dataset, bucketId, onDelete, onAddData, refreshBuckets }) => {
     const [isHovered, setIsHovered] = useState(false);
     const [showDeleteDialog, setShowDeleteDialog] = useState(false);
     const [showAddDataModal, setShowAddDataModal] = useState(false);
@@ -28,6 +28,7 @@ export const DatasetItem = ({ dataset, bucketId, onDelete, onAddData }) => {
 
     const handleAddData = () => {
         setShowAddDataModal(true);
+        refreshBuckets();
     };
 
     return (
@@ -40,7 +41,7 @@ export const DatasetItem = ({ dataset, bucketId, onDelete, onAddData }) => {
                 <div className="flex-grow">
                     <p className="font-medium">{dataset.name}</p>
                     <p className="text-sm text-gray-400">Type: {dataset.type}</p>
-                    <p className="text-sm text-gray-400">Files: {dataset.fileCount}</p>
+                    <p className="text-sm text-gray-400">Files: {dataset.fileCount !== undefined ? dataset.fileCount : 'N/A'}</p>
                 </div>
                 {isHovered && (
                     <div className="flex items-center space-x-2 absolute right-2 top-1/2 transform -translate-y-1/2">
@@ -85,7 +86,7 @@ export const DatasetItem = ({ dataset, bucketId, onDelete, onAddData }) => {
                 datasetId={dataset.id}
                 datasetType={dataset.type}
                 bucketId={bucketId}
-                onDataAdded={onAddData}
+                onDataAdded={handleAddData}
             />
         </>
     );

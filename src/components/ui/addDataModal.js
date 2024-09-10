@@ -30,7 +30,6 @@ const AddDataModal = ({ isOpen, onClose, datasetId, datasetType, onDataAdded }) 
                     },
                 });
             }
-            await api.post(`/dataset/${datasetId}/update-filecount`)
             onDataAdded();
             onClose();
         } catch (err) {

@@ -124,8 +124,24 @@ async def upload_data_to_s3(file, file_name, file_type):
         return {'file name': file_name, 'id': file_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unable to upload data to S3: {str(e)}")
+    
+def update_filecount(dataset_id):
+    try:
+        rawData = db.rawData
+        datasets = db.datasets
 
-def download_data_from_s3(fileName):
+        current_dataset = datasets.find_one({'_id': ObjectId(dataset_id)})
+
+        querryResult = rawData.find({'dataset': ObjectId(dataset_id)})
+        if querryResult is not None:
+            docs = list(querryResult)
+            filter = {'_id': ObjectId(dataset_id)}
+            update = {'$set':{'fileCount' : len(docs)}}
+            datasets.update_one(filter,update)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unable to update filecount: {str(e)}")
+
+async def download_data_from_s3(fileName):
     s3_image_key = 'data/' + fileName
     try:
         # Download the image from S3
@@ -135,7 +151,7 @@ def download_data_from_s3(fileName):
     except:
         return JSONResponse({"error": "cannot dowload data"}, status_code=404)
     
-def delete_object_from_s3(object_name):
+async def delete_object_from_s3(object_name):
     try:
         object_key = 'data/' + str(object_name)
         # Delete the object
@@ -301,7 +317,8 @@ def get_dataset_info(dataset_id: str):
             return {
                 "id": str(dataset["_id"]),
                 "name": dataset.get("name"),
-                "type": dataset.get("type")
+                "type": dataset.get("type"),
+                "fileCount": dataset.get("fileCount")
             }
         else:
             raise HTTPException(status_code=404, detail="Dataset not found")
@@ -433,11 +450,13 @@ async def get_buckets(project_id: str, current_user: dict = Depends(get_current_
             # Populate datasets with name and type
             for dataset_id in bucket.get("datasets", []):
                 try:
+                    update_filecount(dataset_id)
                     dataset_info = get_dataset_info(str(dataset_id))
                     display_bucket["datasets"].append({
                         "id": dataset_info["id"],
                         "name": dataset_info["name"],
-                        "type": dataset_info["type"]
+                        "type": dataset_info["type"],
+                        "fileCount": dataset_info["fileCount"]
                     })
                 except HTTPException:
                     # If a dataset is not found, we'll skip it instead of failing the whole request
@@ -506,7 +525,7 @@ async def delete_bucket(project_id: str, bucket_id: str, current_user: dict = De
                 uuid_value = raw_data.get('value')
                 if uuid_value:
                     # Delete the file from S3
-                    delete_object_from_s3(uuid_value)
+                    await delete_object_from_s3(uuid_value)
                 # Delete the rawData document from MongoDB
                 rawData.delete_one({"_id": raw_data["_id"]})
 
@@ -551,7 +570,7 @@ async def delete_dataset(dataset_id: str, bucket_id: str, current_user: dict = D
             uuid_value = raw_data.get('value')
             if uuid_value:
                 # Delete the file from S3
-                delete_object_from_s3(uuid_value)
+                await delete_object_from_s3(uuid_value)
             # Delete the rawData document from MongoDB
             rawData.delete_one({"_id": raw_data["_id"]})
 
@@ -603,24 +622,6 @@ async def addData(dataset_id, type: str = Form(...), file: UploadFile = File(...
         return str(dataID)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unable to upload data: {str(e)}")
-    
-@app.post("/dataset/{dataset_id}/update-filecount")
-async def update_filecount(dataset_id, current_user: dict = Depends(get_current_user)):
-    try:
-        rawData = db.rawData
-        datasets = db.datasets
-
-        current_dataset = datasets.find_one({'_id': ObjectId(dataset_id)})
-
-        querryResult = rawData.find({'dataset': ObjectId(dataset_id)})
-        if querryResult is not None:
-            docs = list(querryResult)
-            filter = {'_id': ObjectId(dataset_id)}
-            update = {'$set':{'fileCount' : current_dataset['fileCount'] + len(docs)}}
-            datasets.update_one(filter,update)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Unable to update filecount: {str(e)}")
-
 
 
 @app.post("/update_mask")

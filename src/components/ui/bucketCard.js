@@ -9,7 +9,7 @@ import { DatasetItem } from './datasetItem';
 import api from '../api';
 
 
-export const BucketCard = ({ bucket, onDelete, onDeleteDataset, onAddDataToDataset, onAddDataset }) => {
+export const BucketCard = ({ bucket, onDelete, onDeleteDataset, onAddDataset, refreshBuckets}) => {
     const [showDeleteDialog, setShowDeleteDialog] = useState(false);
     const [showAddDatasetDialog, setShowAddDatasetDialog] = useState(false);
     const [isHovered, setIsHovered] = useState(false);
@@ -63,8 +63,8 @@ export const BucketCard = ({ bucket, onDelete, onDeleteDataset, onAddDataToDatas
         }
     };
 
-    const handleAddData = async (datasetId) => {
-        console.log(`Data added to dataset ${datasetId}`);
+    const handleAddData = async () => {
+        await refreshBuckets();
     };
     
     return (
@@ -106,8 +106,10 @@ export const BucketCard = ({ bucket, onDelete, onDeleteDataset, onAddDataToDatas
                                     <DatasetItem 
                                         key={dataset.id}
                                         dataset={dataset}
+                                        bucketId={bucket._id}
                                         onDelete={(datasetId) => onDeleteDataset(bucket._id, datasetId)}
-                                        onAddData={() => handleAddData(dataset.id)}
+                                        onAddData={() => handleAddData}
+                                        refreshBuckets={refreshBuckets}
                                     />
                                 ))
                             ) : (

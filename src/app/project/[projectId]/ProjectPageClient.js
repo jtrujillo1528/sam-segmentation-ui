@@ -27,6 +27,15 @@ const ProjectPageClient = ({ projectId }) => {
     const [isNewBucketModalOpen, setIsNewBucketModalOpen] = useState(false);
     const [newBucketName, setNewBucketName] = useState('');
 
+    const fetchBuckets = async () => {
+      try {
+          const bucketsResponse = await api.get(`/project/${projectId}/buckets`);
+          setBuckets(bucketsResponse.data);
+      } catch (error) {
+          console.error('Error fetching buckets:', error);
+      }
+    };
+
     useEffect(() => {
         const fetchProjectData = async () => {
             setIsLoading(true);
@@ -61,54 +70,42 @@ const ProjectPageClient = ({ projectId }) => {
           const formData = new FormData();
           formData.append('name', newBucketName);
   
-          const response = await api.post(`/project/${projectId}/new-bucket`, formData, {
+          await api.post(`/project/${projectId}/new-bucket`, formData, {
               headers: {
                   'Content-Type': 'multipart/form-data',
               },
           });
           
-          // Refresh buckets after creating a new one
-          const bucketsResponse = await api.get(`/project/${projectId}/buckets`);
-          setBuckets(bucketsResponse.data);
+          await fetchBuckets();
           setIsNewBucketModalOpen(false);
           setNewBucketName('');
       } catch (error) {
           console.error('Error creating bucket:', error);
-          if (error.response) {
-              console.error('Error response:', error.response.data);
-          }
-          // Handle unauthorized errors here, e.g., redirect to login page
           if (error.response && error.response.status === 401) {
               router.push('/login');
           }
       }
-    };
-
-    const handleDeleteBucket = async (bucketId) => {
-      try {
-          await api.delete(`/project/${projectId}/bucket/${bucketId}`);
-          // Refresh buckets after deleting
-          const bucketsResponse = await api.get(`/project/${projectId}/buckets`);
-          setBuckets(bucketsResponse.data);
-      } catch (error) {
-          console.error('Error deleting bucket:', error);
-      }
   };
 
-  const handleDeleteDataset = async (bucketId, datasetId) => {
+  const handleDeleteBucket = async (bucketId) => {
+    try {
+        await api.delete(`/project/${projectId}/bucket/${bucketId}`);
+        await fetchBuckets();
+    } catch (error) {
+        console.error('Error deleting bucket:', error);
+    }
+};
+
+const handleDeleteDataset = async (bucketId, datasetId) => {
     try {
         await api.delete(`/project/${projectId}/bucket/${bucketId}/dataset/${datasetId}`);
-        // Refresh buckets after deleting dataset
-        const bucketsResponse = await api.get(`/project/${projectId}/buckets`);
-        setBuckets(bucketsResponse.data);
+        await fetchBuckets();
     } catch (error) {
         console.error('Error deleting dataset:', error);
     }
 };
 
-
 const handleAddDataset = async (bucketId, newDataset) => {
-  console.log('handleAddDataset called in ProjectPageClient', { bucketId, newDataset }); // Debug log
   try {
       // Update the local state with the new dataset
       setBuckets(prevBuckets => prevBuckets.map(bucket => {
@@ -121,9 +118,7 @@ const handleAddDataset = async (bucketId, newDataset) => {
           return bucket;
       }));
 
-      // Optionally, you can refetch the buckets to ensure sync with the server
-      const bucketsResponse = await api.get(`/project/${projectId}/buckets`);
-      setBuckets(bucketsResponse.data);
+      await fetchBuckets();
   } catch (error) {
       console.error('Error updating buckets after adding dataset:', error);
   }
@@ -146,6 +141,7 @@ const handleAddDataset = async (bucketId, newDataset) => {
                       onDelete={handleDeleteBucket}
                       onDeleteDataset={handleDeleteDataset}
                       onAddDataset={handleAddDataset}
+                      refreshBuckets={fetchBuckets}
                   />
               ))}
           </div>
