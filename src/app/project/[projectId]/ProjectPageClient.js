@@ -9,9 +9,8 @@ import { useRouter } from 'next/navigation';
 import BucketCard from '../../../components/ui/bucketCard';
 
 //to do
-//Create components for datasets and outputs to be displayed within bucket card
-//Add create dataset and create output functionalities
-//Add upload data functionality which creates rawData objects associated with with a dataset and s3 objects associated with each dataset
+//Create component for outputs to be displayed within bucket card
+//Add create output functionalities
 //Add create output functionality which will create formatted data from edited dataset
 //How to link segmentation UI to uploaded image data
 //How to handle model training on the UI
@@ -26,6 +25,7 @@ const ProjectPageClient = ({ projectId }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [isNewBucketModalOpen, setIsNewBucketModalOpen] = useState(false);
     const [newBucketName, setNewBucketName] = useState('');
+    const [selectedDataset, setSelectedDataset] = useState(null);
 
     const fetchBuckets = async () => {
       try {
@@ -123,6 +123,15 @@ const handleAddDataset = async (bucketId, newDataset) => {
       console.error('Error updating buckets after adding dataset:', error);
   }
 };
+const handleDatasetSelect = (dataset) => {
+  setSelectedDataset(dataset);
+};
+
+const handleProcessData = () => {
+  if (selectedDataset && selectedDataset.fileCount > 0) {
+      router.push(`/segmentation/${selectedDataset.id}`);
+  }
+};
 
     return (
       <div className="min-h-screen bg-gray-900 text-white p-8">
@@ -132,6 +141,13 @@ const handleAddDataset = async (bucketId, newDataset) => {
           <Button onClick={() => setIsNewBucketModalOpen(true)} className="mb-8 bg-blue-600 hover:bg-blue-700">
               Create New Bucket
           </Button>
+          <Button 
+                    onClick={handleProcessData} 
+                    className="bg-green-600 hover:bg-green-700"
+                    disabled={!selectedDataset || selectedDataset.fileCount === 0}
+                >
+                    Process Data
+                </Button>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {buckets.map((bucket) => (
@@ -142,6 +158,8 @@ const handleAddDataset = async (bucketId, newDataset) => {
                       onDeleteDataset={handleDeleteDataset}
                       onAddDataset={handleAddDataset}
                       refreshBuckets={fetchBuckets}
+                      onSelectDataset={handleDatasetSelect}
+                      selectedDataset={selectedDataset}
                   />
               ))}
           </div>

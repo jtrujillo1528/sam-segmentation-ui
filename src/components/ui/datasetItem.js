@@ -4,7 +4,7 @@ import { Trash2, Plus } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from './dialog';
 import AddDataModal from './addDataModal';
 
-export const DatasetItem = ({ dataset, bucketId, onDelete, onAddData, refreshBuckets }) => {
+export const DatasetItem = ({ dataset, bucketId, onDelete, onAddData, refreshBuckets, onSelect, isSelected }) => {
     const [isHovered, setIsHovered] = useState(false);
     const [showDeleteDialog, setShowDeleteDialog] = useState(false);
     const [showAddDataModal, setShowAddDataModal] = useState(false);
@@ -34,9 +34,10 @@ export const DatasetItem = ({ dataset, bucketId, onDelete, onAddData, refreshBuc
     return (
         <>
             <div 
-                className="flex items-center justify-between p-2 hover:bg-gray-700 rounded relative"
+                className={`flex items-center justify-between p-2 hover:bg-gray-700 rounded relative ${isSelected ? 'bg-blue-600' : ''}`}
                 onMouseEnter={() => setIsHovered(true)}
                 onMouseLeave={() => setIsHovered(false)}
+                onClick={() => onSelect && onSelect(dataset)}
             >
                 <div className="flex-grow">
                     <p className="font-medium">{dataset.name}</p>
