@@ -4,7 +4,15 @@ import { Trash2, Plus } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from './dialog';
 import AddDataModal from './addDataModal';
 
-export const DatasetItem = ({ dataset, bucketId, onDelete, onAddData, refreshBuckets, onSelect, isSelected }) => {
+export const DatasetItem = ({ 
+    dataset, 
+    bucketId, 
+    onDelete, 
+    onAddData, 
+    onSelect,
+    isSelected,
+    refreshBuckets 
+}) => {
     const [isHovered, setIsHovered] = useState(false);
     const [showDeleteDialog, setShowDeleteDialog] = useState(false);
     const [showAddDataModal, setShowAddDataModal] = useState(false);
@@ -28,22 +36,22 @@ export const DatasetItem = ({ dataset, bucketId, onDelete, onAddData, refreshBuc
 
     const handleAddData = () => {
         setShowAddDataModal(true);
-        refreshBuckets();
+        refreshBuckets()
     };
 
     return (
         <>
-                <div 
-                    className={`
-                        flex items-center justify-between p-2 
-                        rounded relative transition-colors duration-200
-                        ${isSelected ? 'border-2 border-blue-500' : 'border-2 border-transparent'}
-                        ${isHovered ? 'bg-gray-700' : 'bg-gray-800'}
-                    `}
-                    onMouseEnter={() => setIsHovered(true)}
-                    onMouseLeave={() => setIsHovered(false)}
-                    onClick={() => onSelect && onSelect(dataset)}
-                >
+            <div 
+                className={`
+                    flex items-center justify-between p-2 
+                    rounded relative transition-colors duration-200
+                    ${isSelected ? 'border-2 border-blue-500' : 'border-2 border-transparent'}
+                    ${isHovered ? 'bg-gray-700' : 'bg-gray-800'}
+                `}
+                onMouseEnter={() => setIsHovered(true)}
+                onMouseLeave={() => setIsHovered(false)}
+                onClick={() => onSelect(dataset)}
+            >
                 <div className="flex-grow">
                     <p className="font-medium">{dataset.name}</p>
                     <p className="text-sm text-gray-400">Type: {dataset.type}</p>
@@ -52,14 +60,20 @@ export const DatasetItem = ({ dataset, bucketId, onDelete, onAddData, refreshBuc
                 {(isHovered || isSelected) && (
                     <div className="flex items-center space-x-2 absolute right-2 top-1/2 transform -translate-y-1/2">
                         <Button
-                            onClick={handleAddData}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handleAddData();
+                            }}
                             className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-1 px-3 rounded text-sm"
                         >
                             Add Data
                         </Button>
                         <div className="w-8 h-8 flex items-center justify-center">
                             <Trash2
-                                onClick={handleDelete}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDelete();
+                                }}
                                 className="h-4 w-4 text-red-500 cursor-pointer hover:text-red-700 transition-colors"
                             />
                         </div>

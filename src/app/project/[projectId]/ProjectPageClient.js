@@ -25,7 +25,7 @@ const ProjectPageClient = ({ projectId }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [isNewBucketModalOpen, setIsNewBucketModalOpen] = useState(false);
     const [newBucketName, setNewBucketName] = useState('');
-    const [selectedDataset, setSelectedDataset] = useState(null);
+    const [selectedDatasets, setSelectedDatasets] = useState([]);
 
     const fetchBuckets = async () => {
       try {
@@ -105,6 +105,15 @@ const handleDeleteDataset = async (bucketId, datasetId) => {
     }
 };
 
+const refreshBuckets = async () => {
+  try {
+      const bucketsResponse = await api.get(`/project/${projectId}/buckets`);
+      setBuckets(bucketsResponse.data);
+  } catch (error) {
+      console.error('Error refreshing buckets:', error);
+  }
+};
+
 const handleAddDataset = async (bucketId, newDataset) => {
   try {
       // Update the local state with the new dataset
@@ -123,19 +132,38 @@ const handleAddDataset = async (bucketId, newDataset) => {
       console.error('Error updating buckets after adding dataset:', error);
   }
 };
+
 const handleDatasetSelect = (dataset) => {
-  if (selectedDataset && selectedDataset.id === dataset.id) {
-      // Unselect if clicking the same dataset
-      setSelectedDataset(null);
-  } else {
-      setSelectedDataset(dataset);
-  }
+  setSelectedDatasets(prevSelected => {
+      const isAlreadySelected = prevSelected.some(d => d.id === dataset.id);
+      if (isAlreadySelected) {
+          return prevSelected.filter(d => d.id !== dataset.id);
+      } else {
+          return [...prevSelected, dataset];
+      }
+  });
 };
-const handleProcessData = () => {
-  if (selectedDataset && selectedDataset.fileCount > 0) {
-      router.push(`/segmentation/${selectedDataset.id}`);
-  }
-};
+
+const handleProcessData = async () => {
+    if (selectedDatasets.length > 0 && selectedDatasets.every(d => d.fileCount > 0)) {
+      const datasetIds = selectedDatasets.map(d => d.id);
+      try {
+        const response = await api.post('/segmentation/initialize', { dataset_ids: datasetIds });
+        if (response.data.output_id) {
+          router.push(`/segmentation/${response.data.output_id}`);
+        }
+      } catch (error) {
+        console.error('Error initializing data prep:', error);
+        if (error.response) {
+          console.error('Error response:', error.response.data);
+        }
+        if (error.response && error.response.status === 401) {
+          router.push('/login');
+        }
+      }
+    }
+  };
+
 
     return (
       <div className="min-h-screen bg-gray-900 text-white p-8">
@@ -149,24 +177,24 @@ const handleProcessData = () => {
           <Button 
               onClick={handleProcessData} 
               className="bg-blue-600 hover:bg-blue-700"
-              disabled={!selectedDataset || selectedDataset.fileCount === 0}
+              disabled={selectedDatasets.length === 0 || selectedDatasets.some(d => d.fileCount === 0)}
           >
-              Process Data
+              Process Data ({selectedDatasets.length})
           </Button>
       </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {buckets.map((bucket) => (
-                  <BucketCard 
-                      key={bucket._id} 
-                      bucket={bucket} 
-                      onDelete={handleDeleteBucket}
-                      onDeleteDataset={handleDeleteDataset}
-                      onAddDataset={handleAddDataset}
-                      refreshBuckets={fetchBuckets}
-                      onSelectDataset={handleDatasetSelect}
-                      selectedDataset={selectedDataset}
-                  />
+                    <BucketCard 
+                    key={bucket._id} 
+                    bucket={bucket} 
+                    onDelete={handleDeleteBucket}
+                    onDeleteDataset={handleDeleteDataset}
+                    onAddDataset={handleAddDataset}
+                    onSelectDataset={handleDatasetSelect}
+                    selectedDatasets={selectedDatasets}
+                    refreshBuckets={refreshBuckets}
+                />
               ))}
           </div>
 

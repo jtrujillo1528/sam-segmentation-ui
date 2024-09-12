@@ -9,7 +9,15 @@ import { DatasetItem } from './datasetItem';
 import api from '../api';
 
 
-export const BucketCard = ({ bucket, onDelete, onDeleteDataset, onAddDataset, refreshBuckets, onSelectDataset, selectedDataset}) => {
+export const BucketCard = ({ 
+    bucket, 
+    onDelete, 
+    onDeleteDataset, 
+    onAddDataset, 
+    onSelectDataset,
+    selectedDatasets,
+    refreshBuckets
+}) => {
     const [showDeleteDialog, setShowDeleteDialog] = useState(false);
     const [showAddDatasetDialog, setShowAddDatasetDialog] = useState(false);
     const [isHovered, setIsHovered] = useState(false);
@@ -71,10 +79,7 @@ export const BucketCard = ({ bucket, onDelete, onDeleteDataset, onAddDataset, re
         <>
             <Card 
                 key={bucket._id} 
-                className={`
-                    bg-gray-800 relative
-                    ${selectedDataset && selectedDataset.bucketId === bucket._id ? 'border-2 border-blue-500' : ''}
-                `}
+                className={`bg-gray-800 relative`}
                 onMouseEnter={() => setIsHovered(true)}
                 onMouseLeave={() => setIsHovered(false)}
             >
@@ -112,9 +117,9 @@ export const BucketCard = ({ bucket, onDelete, onDeleteDataset, onAddDataset, re
                                         bucketId={bucket._id}
                                         onDelete={(datasetId) => onDeleteDataset(bucket._id, datasetId)}
                                         onAddData={() => handleAddData(dataset.id)}
+                                        onSelect={() => onSelectDataset(dataset)}
+                                        isSelected={selectedDatasets.some(d => d.id === dataset.id)}
                                         refreshBuckets={refreshBuckets}
-                                        onSelect={onSelectDataset}  // Pass the onSelect prop
-                                        isSelected={selectedDataset && selectedDataset.id === dataset.id}
                                     />
                                 ))
                             ) : (

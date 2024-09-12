@@ -29,6 +29,7 @@ from typing import List
 from bson import ObjectId
 import boto3
 from botocore.exceptions import NoCredentialsError
+import asyncio
 
 app = FastAPI()
 
@@ -43,7 +44,7 @@ ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",
 
 mongo_file = 'C:\\Users\\jtruj\\projects\\mongoSecrets.txt'
 s3_file = 'C:\\Users\\jtruj\\projects\\s3Secrets.txt'
-images_path = 'C:\\static\\images'
+local_files_path = 'C:\\static\\data'
 
 # Read the access point alias from the file
 with open(s3_file, 'r') as fileRead:
@@ -87,6 +88,9 @@ class ProjectCreate(BaseModel):
 class Project(ProjectCreate):
     id: str
     owner: str
+
+class SegmentationInitRequest(BaseModel):
+    dataset_ids: List[str]
 
 def mongoConnect(file):
     f = open(file, 'r')
@@ -141,15 +145,13 @@ def update_filecount(dataset_id):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unable to update filecount: {str(e)}")
 
-async def download_data_from_s3(fileName):
-    s3_image_key = 'data/' + fileName
+async def download_data_from_s3(file_id: str, local_file_path: str):
+    s3_file_key = f'data/{file_id}'
     try:
-        # Download the image from S3
-        local_file_name = os.path.join(images_path,fileName)
-        s3.download_file(access_point_alias, s3_image_key, local_file_name)
-        return local_file_name
-    except:
-        return JSONResponse({"error": "cannot dowload data"}, status_code=404)
+        s3.download_file(access_point_alias, s3_file_key, local_file_path)
+        return local_file_path
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error downloading file from S3: {str(e)}")
     
 async def delete_object_from_s3(object_name):
     try:
@@ -623,6 +625,75 @@ async def addData(dataset_id, type: str = Form(...), file: UploadFile = File(...
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unable to upload data: {str(e)}")
 
+@app.post("/segmentation/initialize")
+async def initialize_segmentation(
+    request: SegmentationInitRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        dataset_ids = request.dataset_ids
+        # Check if an output object exists for these datasets
+        outputs = db.outputs
+        existing_output = outputs.find_one({
+            "datasets": {"$all": [ObjectId(id) for id in dataset_ids]}
+        })
+
+        if existing_output:
+            output_id = existing_output["_id"]
+        else:
+            # Create a new output object
+            new_output = {
+                "datasets": [ObjectId(id) for id in dataset_ids],
+                "user": current_user["username"],
+                'status': 'not started'
+            }
+            output_id = outputs.insert_one(new_output).inserted_id
+
+        # Create directory structure
+        user_id = current_user["username"]
+        output_dir = os.path.join(local_files_path, user_id, str(output_id))
+        os.makedirs(os.path.join(output_dir, "raw"), exist_ok=True)
+        os.makedirs(os.path.join(output_dir, "masks"), exist_ok=True)
+        os.makedirs(os.path.join(output_dir, "outputs"), exist_ok=True)
+
+        # Query rawData collection
+        raw_data = db.rawData
+        raw_data_files = list(raw_data.find({"dataset": {"$in": [ObjectId(id) for id in dataset_ids]}}))
+
+        # Download raw files
+        files_to_download = raw_data_files[:15] if len(raw_data_files) > 15 else raw_data_files
+        download_tasks = []
+
+        for file in files_to_download:
+            file_path = os.path.join(output_dir, "raw", file["name"])
+            download_tasks.append(download_data_from_s3(file["value"], file_path))
+
+        await asyncio.gather(*download_tasks)
+
+        # Download associated mask files
+        masks = db.masks
+        mask_download_tasks = []
+
+        for file in files_to_download:
+            associated_masks = masks.find({
+                "output": output_id,
+                "raw_data": file["_id"]
+            })
+            if associated_masks is not None:
+                for mask in associated_masks:
+                    mask_path = os.path.join(output_dir, "masks", f"{file['name']}_mask_{mask['_id']}.png")
+                    mask_download_tasks.append(download_data_from_s3(mask["value"], mask_path))
+
+        await asyncio.gather(*mask_download_tasks)
+
+        return {
+            "message": "Segmentation initialization complete",
+            "output_id": str(output_id),
+            "files_processed": len(files_to_download)
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error initializing segmentation: {str(e)}")
 
 @app.post("/update_mask")
 async def update_mask(

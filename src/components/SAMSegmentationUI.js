@@ -18,7 +18,7 @@ import { useRouter } from 'next/navigation';
 //fix scrolling and panning on canvas
 
 
-const SAMSegmentationUI = () => {
+const SAMSegmentationUI = ({ datasets }) => {
   const router = useRouter();
   const [projectName, setProjectName] = useState('');
   const [projectID, setProjectID] = useState('');
